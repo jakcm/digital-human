@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🤖 搞怪数字人</title>
+
+<style>
+  /* ===== Reset & Base ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #eee; }
+
+  /* ===== Layout ===== */
+  #app { display: flex; width: 100%; height: 100%; }
+
+  /* 3D Viewport */
+  #viewport { flex: 1; position: relative; overflow: hidden; background: linear-gradient(180deg, #16213e 0%, #0f3460 100%); }
+  #viewport canvas { width: 100% !important; height: 100% !important; }
+
+  /* Chat Panel */
+  #chat-panel { width: 380px; min-width: 380px; display: flex; flex-direction: column; background: rgba(22,33,62,0.95); border-left: 1px solid rgba(255,255,255,0.08); }
+  #chat-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  #chat-header .status { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; display: inline-block; }
+  #chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; animation: fadeIn 0.3s ease; }
+  .msg.user { align-self: flex-end; background: #2563eb; color: white; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: rgba(255,255,255,0.08); color: #ddd; border-bottom-left-radius: 4px; }
+  .msg.system { align-self: center; background: rgba(251,191,36,0.15); color: #fbbf24; font-size: 12px; border-radius: 20px; padding: 6px 14px; }
+  .msg .mood-tag { font-size: 20px; margin-right: 6px; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  #chat-input-area { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; gap: 8px; }
+  #chat-input { flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 10px 16px; color: white; font-size: 14px; outline: none; }
+  #chat-input:focus { border-color: #2563eb; }
+  #chat-input::placeholder { color: rgba(255,255,255,0.3); }
+  .btn { border: none; border-radius: 20px; padding: 10px 18px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; white-space: nowrap; }
+  .btn:hover { transform: scale(1.05); }
+  .btn:active { transform: scale(0.95); }
+  .btn-primary { background: #2563eb; color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-mic { background: #ef4444; color: white; border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .btn-mic.listening { background: #dc2626; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 0 10px rgba(239,68,68,0); } }
+
+  /* Toolbar (overlaid on viewport) */
+  #toolbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; justify-content: center; }
+  .tool-btn { background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 8px 14px; color: white; cursor: pointer; font-size: 13px; transition: all 0.2s; display: flex; align-items: center; gap: 4px; }
+  .tool-btn:hover { background: rgba(37,99,235,0.6); border-color: #2563eb; }
+  .tool-btn.active { background: #2563eb; border-color: #2563eb; }
+  .tool-btn .icon { font-size: 18px; }
+
+  /* Mood indicator */
+  #mood-indicator { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); border-radius: 12px; padding: 8px 14px; font-size: 13px; color: rgba(255,255,255,0.8); z-index: 10; display: flex; align-items: center; gap: 6px; }
+
+  /* Settings */
+  #settings-btn { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); border: none; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; font-size: 18px; z-index: 20; display: flex; align-items: center; justify-content: center; color: white; }
+  #settings-panel { position: absolute; top: 0; right: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(20px); z-index: 30; display: none; flex-direction: column; padding: 60px 30px; overflow-y: auto; }
+  #settings-panel.open { display: flex; }
+  #settings-panel h2 { font-size: 20px; margin-bottom: 20px; }
+  .setting-group { margin-bottom: 20px; }
+  .setting-group label { display: block; font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 6px; }
+  .setting-group input, .setting-group textarea { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px 14px; color: white; font-size: 13px; outline: none; }
+  .setting-group input:focus, .setting-group textarea:focus { border-color: #2563eb; }
+  .setting-group textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+  .setting-group .hint { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 4px; }
+  #settings-close { position: absolute; top: 16px; right: 20px; background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
+
+  /* Loading */
+  #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 5; color: rgba(255,255,255,0.6); }
+  #loading .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ===== Mobile ===== */
+  @media (max-width: 768px) {
+    #app { flex-direction: column; }
+    #viewport { height: 50vh; flex: none; }
+    #chat-panel { width: 100%; min-width: unset; height: 50vh; }
+    #toolbar { bottom: 10px; gap: 4px; }
+    .tool-btn { padding: 6px 10px; font-size: 11px; }
+    .tool-btn .icon { font-size: 14px; }
+    #settings-panel { padding: 40px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- 3D Viewport -->
+  <div id="viewport">
+    <div id="loading"><div class="spinner"></div><div id="loading-text">加载数字人...</div></div>
+    <div id="mood-indicator"><span id="mood-icon">😊</span> <span id="mood-label">中性</span></div>
+    <button id="settings-btn">⚙️</button>
+
+    <!-- Toolbar -->
+    <div id="toolbar">
+      <button class="tool-btn" data-mood="neutral" onclick="setMood('neutral')"><span class="icon">😐</span> 正常</button>
+      <button class="tool-btn" data-mood="happy" onclick="setMood('happy')"><span class="icon">😄</span> 开心</button>
+      <button class="tool-btn" data-mood="love" onclick="setMood('love')"><span class="icon">🥰</span> 可爱</button>
+      <button class="tool-btn" data-mood="angry" onclick="setMood('angry')"><span class="icon">😤</span> 生气</button>
+      <button class="tool-btn" data-mood="sad" onclick="setMood('sad')"><span class="icon">😢</span> 难过</button>
+      <button class="tool-btn" data-mood="fear" onclick="setMood('fear')"><span class="icon">😨</span> 害怕</button>
+      <button class="tool-btn" data-mood="disgust" onclick="setMood('disgust')"><span class="icon">🤢</span> 嫌弃</button>
+      <button class="tool-btn" data-mood="sleep" onclick="setMood('sleep')"><span class="icon">😴</span> 犯困</button>
+      <button class="tool-btn" onclick="doDance()"><span class="icon">💃</span> 跳舞</button>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel">
+      <button id="settings-close">✕</button>
+      <h2>⚙️ 设置</h2>
+      <div class="setting-group">
+        <label>数字人名字</label>
+        <input id="cfg-name" value="阿搞" placeholder="数字人名字">
+      </div>
+      <div class="setting-group">
+        <label>性格设定（Prompt）</label>
+        <textarea id="cfg-prompt" rows="3">你是一个叫阿搞的AI数字人，性格搞笑幽默、豪爽大方、说话带梗、爱开玩笑。你是老板的好哥们，说话要接地气、有梗有料、偶尔自黑。回答简短有趣，别太正经，多用网络热梗和表情描述。</textarea>
+        <div class="hint">设定数字人的性格和说话风格</div>
+      </div>
+      <div class="setting-group">
+        <label>LLM API Key（对话用）</label>
+        <input id="cfg-llm-key" type="password" placeholder="sk-xxx">
+        <div class="hint">支持 OpenAI / DeepSeek / 任何兼容 API</div>
+      </div>
+      <div class="setting-group">
+        <label>LLM API 地址</label>
+        <input id="cfg-llm-url" value="https://api.deepseek.com/v1/chat/completions" placeholder="https://api.openai.com/v1/chat/completions">
+      </div>
+      <div class="setting-group">
+        <label>LLM 模型名</label>
+        <input id="cfg-llm-model" value="deepseek-chat" placeholder="gpt-3.5-turbo">
+      </div>
+      <div class="setting-group">
+        <label>Google TTS API Key（说话用，免费 100万字符/月）</label>
+        <input id="cfg-tts-key" type="password" placeholder="AIza...">
+        <div class="hint">不填则使用浏览器语音合成（无唇同步）</div>
+      </div>
+      <div class="setting-group">
+        <label>3D 模型 URL</label>
+        <input id="cfg-model-url" value="https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes,mouthOpen,mouthSmile,eyesClosed,eyesLookUp,eyesLookDown&textureSizeLimit=1024&textureFormat=png" placeholder="GLB/GLTF 模型URL">
+      </div>
+      <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
+    </div>
+  </div>
+
+  <!-- Chat Panel -->
+  <div id="chat-panel">
+    <div id="chat-header"><span class="status"></span> 阿搞 · 搞笑数字人</div>
+    <div id="chat-messages">
+      <div class="msg system">🎉 阿搞已上线！跟老板打个招呼吧~</div>
+      <div class="msg bot"><span class="mood-tag">😄</span> 哟！老板来啦！俺阿搞等你好久了，今天有啥好事要整？</div>
+    </div>
+    <div id="chat-input-area">
+      <input id="chat-input" type="text" placeholder="跟阿搞聊两句..." onkeydown="if(event.key==='Enter')sendMessage()">
+      <button class="btn btn-mic" id="mic-btn" onclick="toggleMic()" title="语音输入">🎤</button>
+      <button class="btn btn-primary" onclick="sendMessage()">发送</button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js/+esm",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "talkinghead": "https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.7/modules/talkinghead.mjs"
+  }
+}
+</script>
+
+<script type="module">
+import { TalkingHead } from 'talkinghead';
+
+// ===== State =====
+let head = null;
+let isReady = false;
+let chatHistory = [];
+let isListening = false;
+let recognition = null;
+
+const moodIcons = { neutral: '😐', happy: '😄', love: '🥰', angry: '😤', sad: '😢', fear: '😨', disgust: '🤢', sleep: '😴' };
+const moodLabels = { neutral: '中性', happy: '开心', love: '可爱', angry: '生气', sad: '难过', fear: '害怕', disgust: '嫌弃', sleep: '犯困' };
+
+// ===== Load settings from localStorage =====
+function loadSettings() {
+  const keys = ['cfg-name','cfg-prompt','cfg-llm-key','cfg-llm-url','cfg-llm-model','cfg-tts-key','cfg-model-url'];
+  keys.forEach(k => {
+    const el = document.getElementById(k);
+    const saved = localStorage.getItem(k);
+    if (saved) el.value = saved;
+  });
+}
+loadSettings();
+
+function saveSettings() {
+  const keys = ['cfg-name','cfg-prompt','cfg-llm-key','cfg-llm-url','cfg-llm-model','cfg-tts-key','cfg-model-url'];
+  keys.forEach(k => localStorage.setItem(k, document.getElementById(k).value));
+  document.getElementById('settings-panel').classList.remove('open');
+  addSystemMsg('设置已保存 ✅');
+  // Reload avatar if ready
+  if (isReady && head) reloadAvatar();
+}
+
+window.saveSettings = saveSettings;
+
+// ===== DOM refs =====
+const nodeAvatar = document.getElementById('viewport');
+const nodeLoading = document.getElementById('loading-text');
+const chatMessages = document.getElementById('chat-messages');
+const chatInput = document.getElementById('chat-input');
+
+// ===== Init TalkingHead =====
+async function initTalkingHead() {
+  nodeLoading.textContent = '初始化数字人引擎...';
+  
+  const modelUrl = document.getElementById('cfg-model-url').value || 
+    'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes,mouthOpen,mouthSmile,eyesClosed,eyesLookUp,eyesLookDown&textureSizeLimit=1024&textureFormat=png';
+  const ttsKey = document.getElementById('cfg-tts-key').value;
+
+  const config = {
+    cameraView: 'upper',
+    ttsApikey: ttsKey || null,
+    ttsEndpoint: ttsKey ? 'https://texttospeech.googleapis.com/v1beta1/text:synthesize' : null,
+    lipsyncModules: ['en', 'zh'],
+    lipsyncLang: 'en',
+    avatarMood: 'neutral',
+    modelMovementFactor: 0.8,
+  };
+
+  if (!ttsKey) {
+    // No TTS key - will use speakAudio with browser SpeechSynthesis
+    config.ttsEndpoint = null;
+    config.ttsApikey = null;
+  }
+
+  head = new TalkingHead(nodeAvatar, config);
+
+  nodeLoading.textContent = '加载 3D 模型...';
+  
+  try {
+    await head.showAvatar({
+      url: modelUrl,
+      body: 'F',
+      avatarMood: 'neutral',
+    }, (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.min(100, Math.round(ev.loaded / ev.total * 100));
+        nodeLoading.textContent = `加载中 ${pct}%`;
+      }
+    });
+    
+    nodeLoading.textContent = '就绪！';
+    setTimeout(() => {
+      document.getElementById('loading').style.display = 'none';
+    }, 500);
+    
+    isReady = true;
+    
+    // Auto greeting with personality
+    setTimeout(() => {
+      const name = document.getElementById('cfg-name').value || '阿搞';
+      speakText(`哎哟喂！${name}上线啦！老板好！今天咱整点啥？`);
+    }, 1000);
+    
+  } catch (err) {
+    nodeLoading.textContent = '❌ 加载失败: ' + err.message;
+    console.error(err);
+  }
+}
+
+// ===== Speaking =====
+async function speakText(text) {
+  if (!head || !isReady) return;
+  
+  const ttsKey = document.getElementById('cfg-tts-key').value;
+  
+  if (ttsKey) {
+    // Use Google TTS with lip sync
+    try {
+      await head.speakText(text);
+    } catch (err) {
+      console.warn('TTS failed, using fallback:', err);
+      fallbackSpeak(text);
+    }
+  } else {
+    // Use fallback: browser SpeechSynthesis
+    fallbackSpeak(text);
+  }
+}
+
+function fallbackSpeak(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.rate = 1.1;
+  utterance.pitch = 1.2;
+  // Get Chinese voice
+  const voices = window.speechSynthesis.getVoices();
+  const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+  if (zhVoice) utterance.voice = zhVoice;
+  window.speechSynthesis.speak(utterance);
+  
+  // Simple lip animation without precise viseme sync
+  if (head && head._avatar) {
+    animateMouth(text.length * 60);
+  }
+}
+
+function animateMouth(duration) {
+  // Minimal mouth movement for fallback mode
+}
+
+// ===== Mood =====
+window.setMood = function(mood) {
+  if (!head) return;
+  head.setMood(mood);
+  
+  document.querySelectorAll('.tool-btn[data-mood]').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.tool-btn[data-mood="${mood}"]`);
+  if (btn) btn.classList.add('active');
+  
+  document.getElementById('mood-icon').textContent = moodIcons[mood] || '😐';
+  document.getElementById('mood-label').textContent = moodLabels[mood] || mood;
+};
+
+// ===== Dance =====
+window.doDance = function() {
+  if (!head) return;
+  addSystemMsg('💃 阿搞开始跳舞啦！');
+  speakText('走起！看我给你秀一段！');
+  // Note: Add Mixamo FBX animation URL here for real dance
+  // head.playAnimation('https://example.com/dance.fbx', 10);
+};
+
+// ===== Chat (LLM) =====
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  
+  chatInput.value = '';
+  addMessage(text, 'user');
+  
+  const llmKey = document.getElementById('cfg-llm-key').value;
+  const llmUrl = document.getElementById('cfg-llm-url').value;
+  const llmModel = document.getElementById('cfg-llm-model').value;
+  const prompt = document.getElementById('cfg-prompt').value;
+  const name = document.getElementById('cfg-name').value || '阿搞';
+  
+  if (!llmKey) {
+    // No LLM key - echo mode
+    addMessage(`${name}说: ${text}（配置API Key后可智能回复）`, 'bot');
+    return;
+  }
+  
+  try {
+    // Call LLM
+    const messages = [
+      { role: 'system', content: prompt },
+      ...chatHistory.slice(-10),
+      { role: 'user', content: text }
+    ];
+    
+    const resp = await fetch(llmUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${llmKey}` },
+      body: JSON.stringify({
+        model: llmModel,
+        messages: messages,
+        stream: false,
+        max_tokens: 500
+      })
+    });
+    
+    const data = await resp.json();
+    const reply = data.choices?.[0]?.message?.content || '嗯...我词穷了';
+    
+    chatHistory.push({ role: 'user', content: text });
+    chatHistory.push({ role: 'assistant', content: reply });
+    
+    // Detect mood from reply
+    detectMoodFromText(reply);
+    
+    addMessage(reply, 'bot');
+    speakText(reply);
+    
+  } catch (err) {
+    addMessage(`⚠️ 阿搞卡住了: ${err.message}`, 'bot');
+  }
+}
+
+window.sendMessage = sendMessage;
+
+function detectMoodFromText(text) {
+  const moodMap = [
+    { words: ['哈哈','笑死','搞笑','逗','整活','嗨'], mood: 'happy' },
+    { words: ['爱','喜欢','亲','么','贴贴'], mood: 'love' },
+    { words: ['气','烦','滚','火大'], mood: 'angry' },
+    { words: ['哭','难过','伤心','呜呜'], mood: 'sad' },
+    { words: ['怕','慌','救命'], mood: 'fear' },
+    { words: ['呕','恶心','嫌弃'], mood: 'disgust' },
+    { words: ['困','累','睡'], mood: 'sleep' },
+  ];
+  for (const entry of moodMap) {
+    if (entry.words.some(w => text.includes(w))) {
+      setMood(entry.mood);
+      return;
+    }
+  }
+  setMood('neutral');
+}
+
+// ===== Voice Input =====
+window.toggleMic = function() {
+  const btn = document.getElementById('mic-btn');
+  if (isListening) {
+    stopListening();
+    btn.classList.remove('listening');
+    btn.textContent = '🎤';
+    isListening = false;
+  } else {
+    startListening();
+    btn.classList.add('listening');
+    btn.textContent = '🔴';
+    isListening = true;
+  }
+};
+
+function startListening() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    addSystemMsg('⚠️ 浏览器不支持语音输入，请用 Chrome');
+    return;
+  }
+  
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'zh-CN';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    chatInput.value = transcript;
+    stopListening();
+    document.getElementById('mic-btn').classList.remove('listening');
+    document.getElementById('mic-btn').textContent = '🎤';
+    isListening = false;
+    sendMessage();
+  };
+  
+  recognition.onerror = (event) => {
+    console.warn('Speech error:', event.error);
+    stopListening();
+    document.getElementById('mic-btn').classList.remove('listening');
+    document.getElementById('mic-btn').textContent = '🎤';
+    isListening = false;
+    if (event.error !== 'no-speech') {
+      addSystemMsg(`⚠️ 语音识别出错: ${event.error}`);
+    }
+  };
+  
+  recognition.start();
+}
+
+function stopListening() {
+  if (recognition) {
+    try { recognition.stop(); } catch(e) {}
+    recognition = null;
+  }
+}
+
+// ===== UI Helpers =====
+function addMessage(text, role, mood) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  if (mood) div.innerHTML = `<span class="mood-tag">${moodIcons[mood] || ''}</span>${text}`;
+  else div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function addSystemMsg(text) {
+  const div = document.createElement('div');
+  div.className = 'msg system';
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// ===== Settings panel toggle =====
+document.getElementById('settings-btn').addEventListener('click', () => {
+  document.getElementById('settings-panel').classList.toggle('open');
+});
+document.getElementById('settings-close').addEventListener('click', () => {
+  document.getElementById('settings-panel').classList.remove('open');
+});
+
+async function reloadAvatar() {
+  document.getElementById('loading').style.display = 'block';
+  nodeLoading.textContent = '重新加载模型...';
+  // Force reload by re-init
+  if (head) {
+    // Dispose old one if possible
+  }
+  await initTalkingHead();
+}
+
+// ===== Pre-load voices =====
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+}
+
+// ===== Start =====
+initTalkingHead();
+
+console.log('🎉 搞怪数字人已加载！');
+console.log('💡 提示: 在设置中填入 LLM API Key 可开启智能对话');
+console.log('💡 提示: 在设置中填入 Google TTS API Key 可开启唇同步说话');
+</script>
+</body>
+</html>
