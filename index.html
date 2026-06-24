@@ -1001,21 +1001,154 @@ window.setMood = function(mood) {
   document.getElementById('mood-label').textContent = moodLabels[mood] || mood;
 };
 
-// ===== Dance =====
+// ===== Dance — Procedural Bone Animation =====
+// Uses head.animQueue + gesture system for reliable, rhythmic dance moves.
+// No FBX dependency — works with any Ready Player Me avatar skeleton.
+
+// Dance beat timing (BPM 128 → ~470ms per beat)
+const DANCE_BPM = 128;
+const DANCE_BEAT_MS = Math.round(60000 / DANCE_BPM);
+
+// Queue a single animation keyframe into head.animQueue
+function danceKeyframe(startMs, morph, startVal, peakVal, endVal) {
+  const dur = DANCE_BEAT_MS * 0.45;
+  head.animQueue.push({
+    template: { name: 'pose' },
+    ts: [startMs, startMs + dur * 0.3, startMs + dur],
+    vs: { [morph]: [startVal, peakVal, endVal] }
+  });
+}
+
+// Queue a smooth sinusoidal sway over a duration
+function danceSway(tStart, tEnd, morph, amplitude, cycles) {
+  const step = DANCE_BEAT_MS * 0.5;
+  for (let t = tStart; t < tEnd; t += step) {
+    const progress = (t - tStart) / (tEnd - tStart);
+    const angle = Math.sin(progress * Math.PI * 2 * cycles) * amplitude;
+    danceKeyframe(t, morph, null, angle, null);
+  }
+}
+
+// Full dance routine — ~16 seconds of rhythmic moves
+function danceRoutine() {
+  if (!head || !isReady) return;
+  addSystemMsg('💃 阿搞开始跳舞啦！🎶');
+  speakText('哟哟哟！音乐走起！看我给老板秀一段！');
+
+  const baseTime = head.animClock || 0;
+  const offset = 50; // small initial pause
+
+  // ── Phase 1: Warm-up sway (0–4s) ──
+  // Hip sway side to side with slight head bob
+  for (let i = 0; i < 8; i++) {
+    const t = baseTime + offset + i * DANCE_BEAT_MS * 0.75;
+    const direction = i % 2 === 0 ? 0.25 : -0.25;
+    // Body lean
+    danceKeyframe(t, 'bodyRotateY', null, direction, null);
+    // Counter-head lean (natural)
+    danceKeyframe(t, 'headRotateY', null, -direction * 0.5, null);
+    // Slight body bounce
+    danceKeyframe(t, 'bodyRotateX', null, i % 2 === 0 ? 0.08 : -0.05, null);
+  }
+
+  // ── Phase 2: Groove with arm gestures (4–8s) ──
+  const p2 = baseTime + offset + 8 * DANCE_BEAT_MS * 0.75 + 200;
+  for (let i = 0; i < 6; i++) {
+    const t = p2 + i * DANCE_BEAT_MS;
+    const direction = i % 2 === 0 ? 0.3 : -0.3;
+    danceKeyframe(t, 'bodyRotateY', null, direction, null);
+    // Head movement
+    danceKeyframe(t, 'headRotateZ', null, i % 2 === 0 ? 0.06 : -0.06, null);
+    danceKeyframe(t, 'headRotateX', null, 0.08, null);
+    // Body roll
+    const rollT = p2 + i * DANCE_BEAT_MS + DANCE_BEAT_MS * 0.25;
+    danceKeyframe(rollT, 'bodyRotateX', null, 0.12, null);
+  }
+
+  // Play arm gestures during phase 2
+  const gestureNames = ['handup', 'side', 'shrug', 'namaste'];
+  setTimeout(() => {
+    if (!head) return;
+    head.playGesture('handup', 1000, true, undefined);
+    setTimeout(() => head?.playGesture('side', 800, false, undefined), 1000);
+    setTimeout(() => head?.playGesture('shrug', 600, true, undefined), 2200);
+    setTimeout(() => head?.playGesture('namaste', 700, false, undefined), 3400);
+  }, 4200);
+
+  // ── Phase 3: Big moves (8–12s) ──
+  const p3 = baseTime + offset + 14 * DANCE_BEAT_MS * 0.75 + 500;
+  for (let i = 0; i < 8; i++) {
+    const t = p3 + i * DANCE_BEAT_MS * 0.6;
+    const phase = (i % 4);
+    switch (phase) {
+      case 0: // twist right
+        danceKeyframe(t, 'bodyRotateY', null, 0.35, null);
+        danceKeyframe(t, 'headRotateX', null, 0.1, null);
+        break;
+      case 1: // twist left
+        danceKeyframe(t, 'bodyRotateY', null, -0.35, null);
+        danceKeyframe(t, 'headRotateX', null, -0.05, null);
+        break;
+      case 2: // body dip
+        danceKeyframe(t, 'bodyRotateX', null, 0.2, null);
+        danceKeyframe(t, 'headRotateY', null, 0.15, null);
+        break;
+      case 3: // body rise
+        danceKeyframe(t, 'bodyRotateX', null, -0.1, null);
+        danceKeyframe(t, 'headRotateY', null, -0.15, null);
+        break;
+    }
+  }
+
+  // More gestures during phase 3
+  setTimeout(() => {
+    if (!head) return;
+    head.playGesture('handup', 800, false, undefined);
+    setTimeout(() => head?.playGesture('ok', 500, true, undefined), 1200);
+    setTimeout(() => head?.playGesture('index', 600, false, undefined), 2400);
+  }, 8200);
+
+  // ── Phase 4: Hip sway + hand wave (12–15s) ──
+  const p4 = baseTime + offset + 22 * DANCE_BEAT_MS * 0.6 + 300;
+  for (let i = 0; i < 6; i++) {
+    const t = p4 + i * DANCE_BEAT_MS * 0.7;
+    const sway = Math.sin(i * 0.8) * 0.28;
+    danceKeyframe(t, 'bodyRotateY', null, sway, null);
+    danceKeyframe(t, 'bodyRotateZ', null, sway * 0.3, null);
+    danceKeyframe(t, 'headRotateZ', null, -sway * 0.4, null);
+  }
+
+  // Final gesture
+  setTimeout(() => {
+    if (!head) return;
+    head.playGesture('thumbup', 900, true, undefined);
+  }, 13000);
+
+  // ── Reset to neutral after dance ──
+  setTimeout(() => {
+    if (!head) return;
+    // Graceful return to neutral
+    const t = (head.animClock || 0) + 50;
+    head.animQueue.push({
+      template: { name: 'pose' },
+      ts: [t, t + 300, t + 600],
+      vs: {
+        bodyRotateY: [null, null, 0],
+        bodyRotateX: [null, null, 0],
+        bodyRotateZ: [null, null, 0],
+        headRotateX: [null, null, 0],
+        headRotateY: [null, null, 0],
+        headRotateZ: [null, null, 0],
+      }
+    });
+    try { head.resetLips?.(); } catch(e) {}
+    addSystemMsg('💃 跳完啦！过瘾！');
+  }, 15500);
+}
+
 window.doDance = function() {
   if (!head) return;
-  addSystemMsg('💃 阿搞开始跳舞啦！');
-  speakText('走起！看我给你秀一段桑巴！');
-  head.playAnimation(
-    'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/fbx/Samba%20Dancing.fbx',
-    null,
-    15,
-    0,
-    0.01
-  );
-  setTimeout(() => {
-    head.stopAnimation();
-  }, 16000);
+  danceRoutine();
 };
 
 // ===== Chat (LLM) =====
