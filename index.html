@@ -243,7 +243,7 @@ async function initTalkingHead() {
   const ttsKey = document.getElementById('cfg-tts-key').value;
 
   const config = {
-    cameraView: 'upper',
+    cameraView: 'full',
     ttsApikey: ttsKey || null,
     ttsEndpoint: ttsKey ? 'https://texttospeech.googleapis.com/v1beta1/text:synthesize' : null,
     lipsyncModules: ['en', 'zh'],
