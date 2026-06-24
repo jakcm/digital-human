@@ -432,13 +432,15 @@ async function edgeTTSFallback(text) {
   try {
     addSystemMsg('🔊 阿搞用免费语音说话中...');
     const mp3Buffer = await edgeTTSSpeak(text);
+    // Decode MP3 ArrayBuffer → AudioBuffer (PCM) for TalkingHead lip-sync
+    const audioBuffer = await head.audioCtx.decodeAudioData(mp3Buffer.slice(0));
     const { words, wtimes, wdurations } = estimateWordTiming(text);
     // speakAudio generates visemes from words automatically + plays audio with lip-sync
     head.speakAudio({
       words: words,
       wtimes: wtimes,
       wdurations: wdurations,
-      audio: mp3Buffer
+      audio: audioBuffer
     });
   } catch (err) {
     console.warn('Edge TTS failed, using browser SpeechSynthesis:', err);
@@ -478,9 +480,19 @@ window.setMood = function(mood) {
 window.doDance = function() {
   if (!head) return;
   addSystemMsg('💃 阿搞开始跳舞啦！');
-  speakText('走起！看我给你秀一段！');
-  // Note: Add Mixamo FBX animation URL here for real dance
-  // head.playAnimation('https://example.com/dance.fbx', 10);
+  speakText('走起！看我给你秀一段桑巴！');
+  // Play Samba Dancing from Three.js official FBX examples (free, Mixamo-compatible)
+  head.playAnimation(
+    'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/fbx/Samba%20Dancing.fbx',
+    null,
+    15,   // play for 15 seconds
+    0,
+    0.01
+  );
+  // Safety stop after animation duration
+  setTimeout(() => {
+    head.stopAnimation();
+  }, 16000);
 };
 
 // ===== Chat (LLM) =====
