@@ -42,8 +42,8 @@
   .btn-mic.listening { background: #dc2626; animation: pulse 1s infinite; }
   @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 0 10px rgba(239,68,68,0); } }
 
-  /* Toolbar (overlaid on viewport) */
-  #toolbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; justify-content: center; }
+  /* Toolbar (chat-panel header) */
+  #toolbar { position: relative; bottom: auto; left: auto; transform: none; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 8px 12px; background: rgba(0,0,0,0.1); }
   .tool-btn { background: rgba(0,0,0,0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 8px 14px; color: white; cursor: pointer; font-size: 13px; transition: all 0.2s; display: flex; align-items: center; gap: 4px; }
   .tool-btn:hover { background: rgba(37,99,235,0.6); border-color: #2563eb; }
   .tool-btn.active { background: #2563eb; border-color: #2563eb; }
@@ -76,8 +76,8 @@
     #viewport { height: 50dvh; flex: none; }
     #chat-panel { width: 100%; min-width: unset; height: 50dvh; overflow: hidden; }
     #chat-messages { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-    /* Mobile: toolbar moved to chat-panel (handled by JS) */
-    #toolbar { position: relative; bottom: auto; left: auto; transform: none; width: 100%; gap: 4px; padding: 6px 8px; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; -webkit-overflow-scrolling: touch; background: rgba(0,0,0,0.15); border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+    /* Mobile: toolbar compact horizontal scroll */
+    #toolbar { gap: 4px; padding: 6px 8px; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; }
     .tool-btn { padding: 5px 8px; font-size: 11px; flex-shrink: 0; }
     .tool-btn .icon { font-size: 14px; }
     #settings-panel { padding: 40px 16px; }
@@ -93,19 +93,6 @@
     <div id="mood-indicator"><span id="mood-icon">😊</span> <span id="mood-label">中性</span></div>
     <button id="settings-btn">⚙️</button>
 
-    <!-- Toolbar -->
-    <div id="toolbar">
-      <button class="tool-btn" data-mood="neutral" onclick="setMood('neutral')"><span class="icon">😐</span> 正常</button>
-      <button class="tool-btn" data-mood="happy" onclick="setMood('happy')"><span class="icon">😄</span> 开心</button>
-      <button class="tool-btn" data-mood="love" onclick="setMood('love')"><span class="icon">🥰</span> 可爱</button>
-      <button class="tool-btn" data-mood="angry" onclick="setMood('angry')"><span class="icon">😤</span> 生气</button>
-      <button class="tool-btn" data-mood="sad" onclick="setMood('sad')"><span class="icon">😢</span> 难过</button>
-      <button class="tool-btn" data-mood="fear" onclick="setMood('fear')"><span class="icon">😨</span> 害怕</button>
-      <button class="tool-btn" data-mood="disgust" onclick="setMood('disgust')"><span class="icon">🤢</span> 嫌弃</button>
-      <button class="tool-btn" data-mood="sleep" onclick="setMood('sleep')"><span class="icon">😴</span> 犯困</button>
-      <button class="tool-btn" onclick="doDance()"><span class="icon">💃</span> 跳舞</button>
-    </div>
-
     <!-- Settings Panel -->
     <div id="settings-panel">
       <button id="settings-close">✕</button>
@@ -116,7 +103,7 @@
       </div>
       <div class="setting-group">
         <label>性格设定（Prompt）</label>
-        <textarea id="cfg-prompt" rows="3">你是一个叫阿搞的AI数字人，性格搞笑幽默、豪爽大方、说话带梗、爱开玩笑。你是老板的好哥们，说话要接地气、有梗有料、偶尔自黑。回答简短有趣，别太正经，多用网络热梗和表情描述。</textarea>
+        <textarea id="cfg-prompt" rows="3">You are an AI digital human named 阿搞. You use English as your native language in conversation. Your personality is funny, humorous, generous, and full of internet memes and witty remarks. You are the boss's good buddy — speak in a down-to-earth way, with punchlines and occasional self-deprecating humor. Keep responses short and fun, don't be too serious, use internet slang and emoji descriptions.</textarea>
         <div class="hint">设定数字人的性格和说话风格</div>
       </div>
       <div class="setting-group">
@@ -148,6 +135,18 @@
   <!-- Chat Panel -->
   <div id="chat-panel">
     <div id="chat-header"><span class="status"></span> 阿搞 · 搞笑数字人</div>
+    <!-- Toolbar (moved out of viewport to avoid covering 3D model) -->
+    <div id="toolbar">
+      <button class="tool-btn" data-mood="neutral" onclick="setMood('neutral')"><span class="icon">😐</span> 正常</button>
+      <button class="tool-btn" data-mood="happy" onclick="setMood('happy')"><span class="icon">😄</span> 开心</button>
+      <button class="tool-btn" data-mood="love" onclick="setMood('love')"><span class="icon">🥰</span> 可爱</button>
+      <button class="tool-btn" data-mood="angry" onclick="setMood('angry')"><span class="icon">😤</span> 生气</button>
+      <button class="tool-btn" data-mood="sad" onclick="setMood('sad')"><span class="icon">😢</span> 难过</button>
+      <button class="tool-btn" data-mood="fear" onclick="setMood('fear')"><span class="icon">😨</span> 害怕</button>
+      <button class="tool-btn" data-mood="disgust" onclick="setMood('disgust')"><span class="icon">🤢</span> 嫌弃</button>
+      <button class="tool-btn" data-mood="sleep" onclick="setMood('sleep')"><span class="icon">😴</span> 犯困</button>
+      <button class="tool-btn" onclick="doDance()"><span class="icon">💃</span> 跳舞</button>
+    </div>
     <div id="chat-messages">
       <div class="msg system">🎉 阿搞已上线！跟老板打个招呼吧~</div>
       <div class="msg bot"><span class="mood-tag">😄</span> 哟！老板来啦！俺阿搞等你好久了，今天有啥好事要整？</div>
@@ -544,35 +543,6 @@ if ('speechSynthesis' in window) {
 }
 
 // ===== Start =====
-// Move toolbar to chat-panel on mobile so it doesn't cover the 3D model
-(function moveToolbarOnMobile() {
-  const isMobile = window.innerWidth <= 768;
-  const toolbar = document.getElementById('toolbar');
-  const chatPanel = document.getElementById('chat-panel');
-  if (isMobile && toolbar.parentElement !== chatPanel) {
-    chatPanel.insertBefore(toolbar, document.getElementById('chat-messages'));
-  } else if (!isMobile && toolbar.parentElement !== document.getElementById('viewport')) {
-    document.getElementById('viewport').appendChild(toolbar);
-  }
-})();
-
-// Re-apply on resize (orientation change etc.)
-let resizeTimer;
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    const isMobile = window.innerWidth <= 768;
-    const toolbar = document.getElementById('toolbar');
-    const chatPanel = document.getElementById('chat-panel');
-    const viewport = document.getElementById('viewport');
-    if (isMobile && toolbar.parentElement !== chatPanel) {
-      chatPanel.insertBefore(toolbar, document.getElementById('chat-messages'));
-    } else if (!isMobile && toolbar.parentElement !== viewport) {
-      viewport.appendChild(toolbar);
-    }
-  }, 150);
-});
-
 initTalkingHead();
 
 console.log('🎉 搞怪数字人已加载！');
