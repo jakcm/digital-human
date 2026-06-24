@@ -87,17 +87,19 @@
   @media (max-width: 768px) {
     #app { flex-direction: column; }
     #viewport { height: 50dvh; flex: none; }
-    #chat-panel { width: 100%; min-width: unset; height: 50dvh; overflow: hidden; }
-    #chat-messages { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-    /* Mobile: mood sidebar → 底部横向滚动条 */
-    #mood-sidebar { top: auto; bottom: 0; right: 0; left: 0; transform: none; flex-direction: row-reverse; align-items: center; }
-    #mood-sidebar.collapsed { transform: translateY(calc(100% - 36px)); }
-    #mood-toggle { width: auto; height: 36px; padding: 0 12px; border-radius: 12px 12px 0 0; border: 1px solid rgba(255,255,255,0.1); border-bottom: none; font-size: 14px; }
-    #mood-panel { flex-direction: row; padding: 6px 8px; border-radius: 0 12px 0 0; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; flex: 1; }
-    .tool-btn { padding: 4px 8px; font-size: 11px; flex-shrink: 0; }
-    .tool-btn .icon { font-size: 14px; }
+    #chat-panel { width: 100%; min-width: unset; height: 50dvh; overflow: hidden; background: rgba(22,33,62,0.45); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    #chat-messages { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; background: transparent; }
+    /* Mobile: mood sidebar 右侧竖排 */
+    #mood-sidebar { top: 50%; right: 0; bottom: auto; left: auto; transform: translateY(-50%); }
+    #mood-sidebar.collapsed { transform: translateY(-50%) translateX(calc(100% - 32px)); }
+    #mood-toggle { width: 32px; height: 44px; font-size: 14px; }
+    #mood-panel { flex-direction: column; padding: 6px 8px 6px 0; gap: 3px; border-radius: 14px 0 0 14px; }
+    .tool-btn { padding: 4px 8px; font-size: 11px; gap: 4px; }
+    .tool-btn .icon { font-size: 13px; }
     #settings-panel { padding: 40px 16px; }
-    #viewport::after { display: none; }
+    #chat-input-area { background: rgba(0,0,0,0.2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    #settings-btn { top: 12px; right: 12px; width: 32px; height: 32px; font-size: 15px; }
+    #mood-indicator { top: 12px; left: 12px; padding: 4px 10px; font-size: 12px; }
   }
 </style>
 </head>
