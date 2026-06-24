@@ -1,0 +1,23 @@
+#!/bin/bash
+# 将此文件安装为 .git/hooks/pre-push
+# 每次 git push 自动将 index.html 里的版本号升级为当前时间戳
+# 安装: bash scripts/install-hooks.sh
+
+INDEX_HTML="$(git rev-parse --show-toplevel)/index.html"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+set -e
+
+if [ ! -f "$INDEX_HTML" ]; then
+    echo "⚠️  pre-push: index.html 不存在，跳过版本号更新"
+    exit 0
+fi
+
+sed -i '' "s/v[0-9]\{8\}-[0-9]\{6\}/v${TIMESTAMP}/g" "$INDEX_HTML"
+
+if ! git diff --quiet "$INDEX_HTML"; then
+    git add "$INDEX_HTML"
+    git commit -m "chore: 更新版本号 v${TIMESTAMP}"
+    echo "✅  pre-push: 版本号已升级到 v${TIMESTAMP}"
+fi
+
+exit 0
