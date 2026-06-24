@@ -76,8 +76,9 @@
     #viewport { height: 50dvh; flex: none; }
     #chat-panel { width: 100%; min-width: unset; height: 50dvh; overflow: hidden; }
     #chat-messages { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-    #toolbar { bottom: 10px; gap: 4px; }
-    .tool-btn { padding: 6px 10px; font-size: 11px; }
+    /* Mobile: toolbar moved to chat-panel (handled by JS) */
+    #toolbar { position: relative; bottom: auto; left: auto; transform: none; width: 100%; gap: 4px; padding: 6px 8px; overflow-x: auto; flex-wrap: nowrap; justify-content: flex-start; -webkit-overflow-scrolling: touch; background: rgba(0,0,0,0.15); border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+    .tool-btn { padding: 5px 8px; font-size: 11px; flex-shrink: 0; }
     .tool-btn .icon { font-size: 14px; }
     #settings-panel { padding: 40px 16px; }
   }
@@ -543,6 +544,35 @@ if ('speechSynthesis' in window) {
 }
 
 // ===== Start =====
+// Move toolbar to chat-panel on mobile so it doesn't cover the 3D model
+(function moveToolbarOnMobile() {
+  const isMobile = window.innerWidth <= 768;
+  const toolbar = document.getElementById('toolbar');
+  const chatPanel = document.getElementById('chat-panel');
+  if (isMobile && toolbar.parentElement !== chatPanel) {
+    chatPanel.insertBefore(toolbar, document.getElementById('chat-messages'));
+  } else if (!isMobile && toolbar.parentElement !== document.getElementById('viewport')) {
+    document.getElementById('viewport').appendChild(toolbar);
+  }
+})();
+
+// Re-apply on resize (orientation change etc.)
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const isMobile = window.innerWidth <= 768;
+    const toolbar = document.getElementById('toolbar');
+    const chatPanel = document.getElementById('chat-panel');
+    const viewport = document.getElementById('viewport');
+    if (isMobile && toolbar.parentElement !== chatPanel) {
+      chatPanel.insertBefore(toolbar, document.getElementById('chat-messages'));
+    } else if (!isMobile && toolbar.parentElement !== viewport) {
+      viewport.appendChild(toolbar);
+    }
+  }, 150);
+});
+
 initTalkingHead();
 
 console.log('🎉 搞怪数字人已加载！');
