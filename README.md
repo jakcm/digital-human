@@ -42,7 +42,7 @@ python3 -m http.server 8000
 | 3D 渲染 | Three.js | WebGL 浏览器 3D |
 | 数字人引擎 | TalkingHead | 唇同步 + 表情 + 动画 |
 | 3D 模型 | Ready Player Me | 免费，含 ARKit+Oculus Visemes |
-| 语音合成 | Google TTS / Web Speech API | 可配置 |
+| 语音合成 | Edge TTS / Google TTS / Web Speech API | 免费 Edge TTS 含实时 Word Boundary 唇同步 |
 | 语音识别 | Web Speech API | Chrome 内建 |
 | AI 对话 | OpenAI 兼容 API | DeepSeek / 任何 LLM |
 | 部署 | GitHub Pages | 免费静态托管 |

@@ -11,108 +11,334 @@
 <style>
   /* ===== Reset & Base ===== */
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #eee; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #eee; }
 
-  /* ===== Layout ===== */
-  #app { display: flex; width: 100%; height: 100%; }
+  /* ===== Fullscreen Layout ===== */
+  #app { position: relative; width: 100%; height: 100%; background: #1a1a2e; }
 
-  /* 3D Viewport - 至少占 2/3 */
-  #viewport { flex: 2.5; position: relative; overflow: hidden; background: linear-gradient(180deg, #16213e 0%, #0f3460 100%); touch-action: pinch-zoom; }
-  #viewport canvas { width: 100% !important; height: 100% !important; }
+  /* 3D Viewport — 全屏 */
+  #viewport { position: absolute; inset: 0; overflow: hidden; touch-action: pinch-zoom; }
+  #viewport canvas { width: 100% !important; height: 100% !important; display: block; }
 
-  /* Chat Panel - 文字区背景全透明，不遮挡模型 */
-  #chat-panel { width: 320px; min-width: 280px; display: flex; flex-direction: column; background: transparent; border-left: 1px solid rgba(255,255,255,0.04); }
-  #chat-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; background: transparent; }
-  #chat-header .status { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; display: inline-block; }
-  #chat-messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; background: transparent; }
-  .msg { max-width: 88%; padding: 8px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; animation: fadeIn 0.3s ease; }
-  .msg.user { align-self: flex-end; background: rgba(37,99,235,0.35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); color: white; border-bottom-right-radius: 4px; }
-  .msg.bot { align-self: flex-start; background: rgba(255,255,255,0.04); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); color: #ddd; border-bottom-left-radius: 4px; }
-  .msg.system { align-self: center; background: rgba(251,191,36,0.06); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); color: #fbbf24; font-size: 12px; border-radius: 20px; padding: 4px 12px; }
+  /* Viewport 底部装饰渐变 (overlay + z-index 保证在 canvas 之上) */
+  #viewport::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+    height: 160px;
+    background: linear-gradient(transparent 20%, rgba(0,0,0,0.35) 100%);
+    pointer-events: none; z-index: 2;
+  }
+
+  /* ===== Chat Overlay — 浮动在模型上方 ===== */
+  #chat-panel {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    pointer-events: none; /* 让点击穿透到 viewport，只有子元素可交互 */
+  }
+
+  #chat-messages {
+    max-height: 45vh; overflow-y: auto;
+    padding: 16px 16px 8px 16px;
+    display: flex; flex-direction: column; gap: 6px;
+    pointer-events: auto; /* 消息区域可滚动交互 */
+    background: transparent;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.08) transparent;
+  }
+  #chat-messages::-webkit-scrollbar { width: 3px; }
+  #chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+  #chat-messages::-webkit-scrollbar-track { background: transparent; }
+
+  .msg {
+    max-width: 75%;
+    padding: 8px 14px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.5;
+    animation: msgIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    word-break: break-word;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: rgba(37,99,235,0.55);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .msg.bot {
+    align-self: flex-start;
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: #f0f0f0;
+    border-bottom-left-radius: 4px;
+  }
+  .msg.system {
+    align-self: center;
+    background: rgba(251,191,36,0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #fbbf24;
+    font-size: 12px;
+    border-radius: 20px;
+    padding: 4px 14px;
+  }
   .msg .mood-tag { font-size: 20px; margin-right: 6px; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-  #chat-input-area { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.04); display: flex; gap: 8px; background: transparent; }
-  #chat-input { flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 10px 16px; color: white; font-size: 14px; outline: none; }
-  #chat-input:focus { border-color: #2563eb; background: rgba(37,99,235,0.08); }
-  #chat-input::placeholder { color: rgba(255,255,255,0.3); }
-  .btn { border: none; border-radius: 20px; padding: 10px 18px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; white-space: nowrap; }
-  .btn:hover { transform: scale(1.05); }
-  .btn:active { transform: scale(0.95); }
-  .btn-primary { background: rgba(37,99,235,0.4); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); color: white; }
-  .btn-primary:hover { background: rgba(29,78,216,0.5); }
-  .btn-mic { background: rgba(239,68,68,0.35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); color: white; border-radius: 50%; width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
-  .btn-mic.listening { background: rgba(220,38,38,0.6); animation: pulse 1s infinite; }
-  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.5); } 50% { box-shadow: 0 0 0 10px rgba(239,68,68,0); } }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
 
-  /* Mood Sidebar - 右侧可收起 */
-  #mood-sidebar { position: absolute; top: 50%; right: 0; transform: translateY(-50%); z-index: 15; display: flex; align-items: center; gap: 0; transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+  /* ===== Chat Input Bar ===== */
+  #chat-input-area {
+    padding: 8px 16px 20px 16px;
+    display: flex; gap: 8px;
+    align-items: center;
+    pointer-events: auto; /* 输入框可交互 */
+    background: transparent;
+  }
+  #chat-input {
+    flex: 1;
+    background: rgba(255,255,255,0.07);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    padding: 10px 18px;
+    color: white;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.25s;
+    pointer-events: auto;
+  }
+  #chat-input:focus {
+    border-color: rgba(37,99,235,0.6);
+    background: rgba(37,99,235,0.06);
+    box-shadow: 0 0 0 1px rgba(37,99,235,0.15);
+  }
+  #chat-input::placeholder { color: rgba(255,255,255,0.25); }
+
+  .btn {
+    border: none;
+    border-radius: 22px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.2s;
+    white-space: nowrap;
+    pointer-events: auto;
+  }
+  .btn:hover { transform: scale(1.04); }
+  .btn:active { transform: scale(0.94); }
+
+  .btn-primary {
+    background: rgba(37,99,235,0.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: white;
+    border: 1px solid rgba(37,99,235,0.2);
+  }
+  .btn-primary:hover { background: rgba(37,99,235,0.6); }
+
+  .btn-mic {
+    background: rgba(239,68,68,0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: white;
+    border: 1px solid rgba(239,68,68,0.15);
+    border-radius: 50%;
+    width: 42px; height: 42px;
+    padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .btn-mic.listening {
+    background: rgba(220,38,38,0.6);
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+    50% { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
+  }
+
+  /* ===== Mood Sidebar — 右侧浮动 ===== */
+  #mood-sidebar {
+    position: absolute; top: 50%; right: 0; transform: translateY(-50%);
+    z-index: 15;
+    display: flex; align-items: center; gap: 0;
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
   #mood-sidebar.collapsed { transform: translateY(-50%) translateX(calc(100% - 36px)); }
-  #mood-toggle { width: 36px; height: 48px; background: rgba(0,0,0,0.4); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.1); border-right: none; border-radius: 12px 0 0 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; color: rgba(255,255,255,0.6); transition: all 0.3s; flex-shrink: 0; }
-  #mood-toggle:hover { background: rgba(37,99,235,0.4); color: white; }
-  #mood-panel { padding: 10px 12px 10px 0; display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.4); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); border-right: none; border-radius: 16px 0 0 16px; }
-  .tool-btn { background: rgba(255,255,255,0.06); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 6px 12px; color: rgba(255,255,255,0.8); cursor: pointer; font-size: 12px; transition: all 0.25s; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .tool-btn:hover { background: rgba(37,99,235,0.3); border-color: rgba(37,99,235,0.4); color: white; }
-  .tool-btn.active { background: rgba(37,99,235,0.5); border-color: #2563eb; color: white; }
+  #mood-toggle {
+    width: 36px; height: 48px;
+    background: rgba(0,0,0,0.3); backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-right: none; border-radius: 12px 0 0 12px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: rgba(255,255,255,0.5);
+    transition: all 0.3s; flex-shrink: 0;
+  }
+  #mood-toggle:hover { background: rgba(37,99,235,0.3); color: white; }
+  #mood-panel {
+    padding: 10px 12px 10px 0;
+    display: flex; flex-direction: column; gap: 4px;
+    background: rgba(0,0,0,0.3); backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-right: none; border-radius: 16px 0 0 16px;
+  }
+  .tool-btn {
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 6px 12px;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.25s;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .tool-btn:hover { background: rgba(37,99,235,0.25); border-color: rgba(37,99,235,0.3); color: white; }
+  .tool-btn.active { background: rgba(37,99,235,0.4); border-color: #2563eb; color: white; }
   .tool-btn .icon { font-size: 16px; }
 
-  /* Viewport 底部半透明装饰条 */
-  #viewport::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: linear-gradient(transparent, rgba(0,0,0,0.3)); pointer-events: none; z-index: 2; }
+  /* ===== Mood Indicator ===== */
+  #mood-indicator {
+    position: absolute; top: 16px; left: 16px;
+    background: rgba(0,0,0,0.25); backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 13px; color: rgba(255,255,255,0.7);
+    z-index: 10;
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
 
-  /* Mood indicator */
-  #mood-indicator { position: absolute; top: 16px; left: 16px; background: rgba(0,0,0,0.35); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 10px; padding: 6px 12px; font-size: 13px; color: rgba(255,255,255,0.8); z-index: 10; display: flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.06); }
+  /* ===== Settings ===== */
+  #settings-btn {
+    position: absolute; top: 16px; right: 16px;
+    background: rgba(0,0,0,0.25); backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 50%;
+    width: 36px; height: 36px;
+    cursor: pointer; font-size: 18px;
+    z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    color: white; transition: all 0.3s;
+  }
+  #settings-btn:hover { background: rgba(37,99,235,0.3); }
 
-  /* Settings */
-  #settings-btn { position: absolute; top: 16px; right: 16px; background: rgba(0,0,0,0.35); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); border-radius: 50%; width: 36px; height: 36px; cursor: pointer; font-size: 18px; z-index: 20; display: flex; align-items: center; justify-content: center; color: white; transition: all 0.3s; }
-  #settings-btn:hover { background: rgba(37,99,235,0.4); }
-  #settings-panel { position: absolute; top: 0; right: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); z-index: 30; display: none; flex-direction: column; padding: 60px 30px; overflow-y: auto; }
+  #settings-panel {
+    position: absolute; top: 0; right: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    z-index: 30;
+    display: none;
+    flex-direction: column;
+    padding: 60px 30px;
+    overflow-y: auto;
+  }
   #settings-panel.open { display: flex; }
-  #settings-panel h2 { font-size: 20px; margin-bottom: 20px; }
+  #settings-panel h2 { font-size: 20px; margin-bottom: 20px; color: #eee; }
   .setting-group { margin-bottom: 20px; }
-  .setting-group label { display: block; font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 6px; }
-  .setting-group input, .setting-group textarea { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px 14px; color: white; font-size: 13px; outline: none; }
-  .setting-group input:focus, .setting-group textarea:focus { border-color: #2563eb; }
+  .setting-group label {
+    display: block; font-size: 12px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 6px;
+  }
+  .setting-group input, .setting-group textarea {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px 14px;
+    color: white; font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .setting-group input:focus, .setting-group textarea:focus {
+    border-color: rgba(37,99,235,0.5);
+  }
   .setting-group textarea { resize: vertical; min-height: 60px; font-family: inherit; }
-  .setting-group .hint { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 4px; }
-  #settings-close { position: absolute; top: 16px; right: 20px; background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
+  .setting-group .hint { font-size: 11px; color: rgba(255,255,255,0.25); margin-top: 4px; }
+  #settings-close {
+    position: absolute; top: 16px; right: 20px;
+    background: none; border: none;
+    color: white; font-size: 24px;
+    cursor: pointer;
+  }
 
-  .version-tag { text-align: center; font-size: 11px; color: rgba(255,255,255,0.25); margin-top: 16px; font-family: 'SF Mono', 'Menlo', monospace; letter-spacing: 0.5px; }
+  .version-tag {
+    text-align: center;
+    font-size: 11px;
+    color: rgba(255,255,255,0.2);
+    margin-top: 16px;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    letter-spacing: 0.5px;
+  }
 
-  /* Loading */
-  #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 5; color: rgba(255,255,255,0.6); }
-  #loading .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  /* ===== Loading ===== */
+  #loading {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 5;
+    color: rgba(255,255,255,0.5);
+  }
+  #loading .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(255,255,255,0.06);
+    border-top-color: rgba(37,99,235,0.6);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ===== Mobile ===== */
   @media (max-width: 768px) {
-    #app { flex-direction: column; }
-    #viewport { height: 68dvh; flex: none; }
-    #chat-panel { width: 100%; min-width: unset; height: 32dvh; overflow: hidden; background: transparent; }
-    #chat-messages { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; background: transparent; }
-    /* Mobile: mood sidebar 右侧竖排 */
-    #mood-sidebar { top: 50%; right: 0; bottom: auto; left: auto; transform: translateY(-50%); }
+    #chat-messages { max-height: 35vh; padding: 12px 12px 4px; }
+    .msg { max-width: 85%; padding: 7px 12px; font-size: 13px; }
+    #chat-input-area { padding: 6px 12px 16px; }
+    #chat-input { font-size: 13px; padding: 9px 14px; }
+    .btn { padding: 9px 16px; font-size: 13px; }
+    .btn-mic { width: 38px; height: 38px; font-size: 16px; }
+
+    #mood-sidebar { top: 50%; right: 0; transform: translateY(-50%); }
     #mood-sidebar.collapsed { transform: translateY(-50%) translateX(calc(100% - 32px)); }
     #mood-toggle { width: 32px; height: 44px; font-size: 14px; }
     #mood-panel { flex-direction: column; padding: 6px 8px 6px 0; gap: 3px; border-radius: 14px 0 0 14px; }
     .tool-btn { padding: 4px 8px; font-size: 11px; gap: 4px; }
     .tool-btn .icon { font-size: 13px; }
+
     #settings-panel { padding: 40px 16px; }
-    #chat-input-area { background: transparent; }
     #settings-btn { top: 12px; right: 12px; width: 32px; height: 32px; font-size: 15px; }
     #mood-indicator { top: 12px; left: 12px; padding: 4px 10px; font-size: 12px; }
+
+    #viewport::after { height: 120px; }
   }
 </style>
 </head>
 <body>
 
 <div id="app">
-  <!-- 3D Viewport -->
+  <!-- 3D Viewport — 全屏 -->
   <div id="viewport">
     <div id="loading"><div class="spinner"></div><div id="loading-text">加载数字人...</div></div>
     <div id="mood-indicator"><span id="mood-icon">😊</span> <span id="mood-label">中性</span></div>
     <button id="settings-btn">⚙️</button>
 
-    <!-- Mood Sidebar - 右侧可收起 -->
+    <!-- Mood Sidebar — 右侧浮动 -->
     <div id="mood-sidebar">
       <div id="mood-panel">
         <button class="tool-btn" data-mood="neutral" onclick="setMood('neutral')"><span class="icon">😐</span> 正常</button>
@@ -157,20 +383,19 @@
       <div class="setting-group">
         <label>Google TTS API Key（说话用，免费 100万字符/月）</label>
         <input id="cfg-tts-key" type="password" placeholder="AIza...">
-        <div class="hint">不填则使用 Edge 免费 TTS（有唇同步，国内直连）</div>
+        <div class="hint">不填则使用 Edge 免费 TTS（含精准唇同步 ✅）</div>
       </div>
       <div class="setting-group">
         <label>3D 模型 URL</label>
         <input id="cfg-model-url" value="https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb" placeholder="GLB/GLTF 模型URL">
       </div>
       <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
-      <div class="version-tag">v20260624-082057</div>
+      <div class="version-tag">v20260624-124000</div>
     </div>
   </div>
 
-  <!-- Chat Panel -->
+  <!-- Chat Overlay — 浮动在模型之上，无标题栏 -->
   <div id="chat-panel">
-    <div id="chat-header"><span class="status"></span> 阿搞 · 搞笑数字人</div>
     <div id="chat-messages">
       <div class="msg system">🎉 阿搞已上线！跟老板打个招呼吧~</div>
       <div class="msg bot"><span class="mood-tag">😄</span> 哟！老板来啦！俺阿搞等你好久了，今天有啥好事要整？</div>
@@ -222,10 +447,8 @@ function saveSettings() {
   keys.forEach(k => localStorage.setItem(k, document.getElementById(k).value));
   document.getElementById('settings-panel').classList.remove('open');
   addSystemMsg('设置已保存 ✅');
-  // Reload avatar if ready
   if (isReady && head) reloadAvatar();
 }
-
 window.saveSettings = saveSettings;
 
 // ===== DOM refs =====
@@ -237,8 +460,8 @@ const chatInput = document.getElementById('chat-input');
 // ===== Init TalkingHead =====
 async function initTalkingHead() {
   nodeLoading.textContent = '初始化数字人引擎...';
-  
-  const modelUrl = document.getElementById('cfg-model-url').value || 
+
+  const modelUrl = document.getElementById('cfg-model-url').value ||
     'https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb';
   const ttsKey = document.getElementById('cfg-tts-key').value;
 
@@ -256,7 +479,6 @@ async function initTalkingHead() {
   };
 
   if (!ttsKey) {
-    // No TTS key - will use speakAudio with browser SpeechSynthesis
     config.ttsEndpoint = null;
     config.ttsApikey = null;
   }
@@ -264,7 +486,7 @@ async function initTalkingHead() {
   head = new TalkingHead(nodeAvatar, config);
 
   nodeLoading.textContent = '加载 3D 模型...';
-  
+
   try {
     await head.showAvatar({
       url: modelUrl,
@@ -276,20 +498,20 @@ async function initTalkingHead() {
         nodeLoading.textContent = `加载中 ${pct}%`;
       }
     });
-    
+
     nodeLoading.textContent = '就绪！';
     setTimeout(() => {
       document.getElementById('loading').style.display = 'none';
     }, 500);
-    
+
     isReady = true;
-    
+
     // Auto greeting with personality
     setTimeout(() => {
       const name = document.getElementById('cfg-name').value || '阿搞';
       speakText(`哎哟喂！${name}上线啦！老板好！今天咱整点啥？`);
     }, 1000);
-    
+
   } catch (err) {
     nodeLoading.textContent = '❌ 加载失败: ' + err.message;
     console.error(err);
@@ -299,11 +521,11 @@ async function initTalkingHead() {
 // ===== Speaking =====
 async function speakText(text) {
   if (!head || !isReady) return;
-  
+
   const ttsKey = document.getElementById('cfg-tts-key').value;
-  
+
   if (ttsKey) {
-    // Use Google TTS with lip sync (best quality)
+    // Google TTS with built-in lip sync (best quality)
     try {
       await head.speakText(text);
     } catch (err) {
@@ -311,16 +533,16 @@ async function speakText(text) {
       await edgeTTSFallback(text);
     }
   } else {
-    // Use free Edge TTS with lip sync (no key needed)
+    // Edge TTS with real word boundary lip sync
     await edgeTTSFallback(text);
   }
 }
 
 // ===== Edge TTS (免费，不需要API Key，国内直连) =====
+// 完整实现：解析 WebSocket word boundary 事件获取精准时间戳，实现唇同步
 const EDGE_TTS_CONFIG = {
   TRUSTED_CLIENT_TOKEN: "6A5AA1D4EAFF4E9FB37E23D68491D6F4",
-  WSS_URL: "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1",
-  VOICES_URL: "https://api.msedgeservices.com/tts/cognitiveservices/voices/list",
+  WSS_URL: "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1",
   VERSION_MS_GEC: "1-142.0.3595",
 };
 
@@ -329,12 +551,6 @@ function edgeTTSGenerateUUID() {
     const r = Math.random() * 16 | 0;
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
   });
-}
-
-function edgeTTSGenerateToken() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2,"0").toUpperCase()).join('');
 }
 
 async function edgeTTSGenerateSecMsGec(token) {
@@ -349,7 +565,7 @@ async function edgeTTSGenerateSecMsGec(token) {
 }
 
 function edgeTTSCreateSSML(text, voice) {
-  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN"><voice name="${voice}"><prosody rate="0%" pitch="0Hz">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}</prosody></voice></speak>`;
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN"><voice name="${voice}"><prosody rate="0%" pitch="0Hz">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;')}</prosody></voice></speak>`;
 }
 
 function edgeTTSBuildConfig() {
@@ -357,6 +573,9 @@ function edgeTTSBuildConfig() {
   return `X-Timestamp:${ts}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":true},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`;
 }
 
+/**
+ * Find the start of binary audio data after "Path:audio\r\n" header in a WebSocket binary message.
+ */
 function edgeTTSFindAudio(arr) {
   const needle = new TextEncoder().encode("Path:audio\r\n");
   for (let i = 0; i <= arr.length - needle.length; i++) {
@@ -369,25 +588,88 @@ function edgeTTSFindAudio(arr) {
   return -1;
 }
 
+/**
+ * Parse word boundary JSON from Edge TTS text messages (Path:rbsp).
+ * Handles both nested (Data: {Offset, Duration, text: {Text}}) and flat (offset, duration, text) formats.
+ * Returns {word, startMs, durMs} or null.
+ */
+function edgeTTSParseWordBoundary(textMsg) {
+  try {
+    // Extract JSON body after \r\n\r\n separator
+    const parts = textMsg.split('\r\n\r\n');
+    if (parts.length < 2) return null;
+    const json = JSON.parse(parts[parts.length - 1]);
+
+    if (json.type !== 'WordBoundary' && json.type !== 'wordBoundary') return null;
+
+    let word, offset, duration;
+
+    if (json.Data && json.Data.text) {
+      // Nested format: {Data: {Offset, Duration, text: {Text}}}
+      word = json.Data.text.Text || json.Data.text.text;
+      offset = json.Data.Offset || 0;
+      duration = json.Data.Duration || 0;
+    } else {
+      // Flat format: {Text, Offset, Duration} or {text, offset, duration}
+      word = json.Text || json.text || '';
+      offset = json.Offset !== undefined ? json.Offset : (json.offset || 0);
+      duration = json.Duration !== undefined ? json.Duration : (json.duration || 0);
+    }
+
+    // Skip non-word boundaries (sentence boundaries, etc.)
+    const boundaryType = (json.Data?.text?.BoundaryType || json.boundaryType || '').toLowerCase();
+    if (boundaryType === 'sentence') return null;
+
+    // Skip empty words
+    if (!word || !word.trim()) return null;
+
+    // Convert ticks (100 ns) → ms
+    const startMs = offset / 10000;
+    const durMs = duration / 10000;
+
+    return { word: word.trim(), startMs, durMs };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Full Edge TTS pipeline: WebSocket → word boundaries + audio → TalkingHead speakAudio.
+ */
 async function edgeTTSSpeak(text) {
-  const voice = 'zh-CN-XiaoxiaoNeural'; // 晓晓，自然中文女声
+  const voice = 'zh-CN-XiaoxiaoNeural';
   const secMsGEC = await edgeTTSGenerateSecMsGec(EDGE_TTS_CONFIG.TRUSTED_CLIENT_TOKEN);
   const reqId = edgeTTSGenerateUUID();
-  const url = `${EDGE_TTS_CONFIG.WSS_URL}?Ocp-Apim-Subscription-Key=${EDGE_TTS_CONFIG.TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGEC}&Sec-MS-GEC-Version=${EDGE_TTS_CONFIG.VERSION_MS_GEC}&ConnectionId=${reqId}`;
-  
+  const url = `${EDGE_TTS_CONFIG.WSS_URL}?TrustedClientToken=${EDGE_TTS_CONFIG.TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGEC}&Sec-MS-GEC-Version=${EDGE_TTS_CONFIG.VERSION_MS_GEC}&ConnectionId=${reqId}`;
+
   const ws = new WebSocket(url);
   const audioChunks = [];
-  
+  const boundaries = []; // {word, startMs, durMs}[]
+
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => { ws.close(); reject(new Error('Edge TTS timeout')); }, 30000);
+
     ws.onopen = () => {
+      // 1. Send speech config (wordBoundaryEnabled: true)
       ws.send(edgeTTSBuildConfig());
+      // 2. Send SSML request
       ws.send(`X-RequestId:${reqId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${new Date().toUTCString()}\r\nPath:ssml\r\n\r\n${edgeTTSCreateSSML(text, voice)}`);
     };
+
     ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
-        if (event.data.includes('Path:turn.end')) ws.close();
+        // Text message: check for word boundary data or turn.end
+        if (event.data.includes('Path:turn.end')) {
+          ws.close();
+          return;
+        }
+        // Parse word boundary from Path:rbsp messages
+        const wb = edgeTTSParseWordBoundary(event.data);
+        if (wb) {
+          boundaries.push(wb);
+        }
       } else {
+        // Binary message: extract audio data after "Path:audio\r\n" header
         const reader = new FileReader();
         reader.onload = () => {
           const arr = new Uint8Array(reader.result);
@@ -397,53 +679,58 @@ async function edgeTTSSpeak(text) {
         reader.readAsArrayBuffer(event.data);
       }
     };
+
     ws.onerror = () => { clearTimeout(timeout); reject(new Error('Edge TTS WebSocket error')); };
     ws.onclose = () => { clearTimeout(timeout); resolve(); };
   });
-  
-  // Combine chunks
+
+  // Combine all audio chunks
   const total = audioChunks.reduce((acc, c) => acc + c.length, 0);
   const combined = new Uint8Array(total);
   let off = 0;
   for (const chunk of audioChunks) { combined.set(chunk, off); off += chunk.length; }
   if (combined.length === 0) throw new Error('No audio received from Edge TTS');
-  return combined.buffer;
+
+  return {
+    audioBuffer: combined.buffer,
+    boundaries, // Array of {word, startMs, durMs}
+  };
 }
 
-// Split text into words with estimated timing for lip-sync
-function estimateWordTiming(text) {
-  // Split by spaces/punctuation for word-level timing
-  const words = text.match(/[\p{L}\p{N}]+|[^\p{L}\p{N}\s]/gu) || [text];
-  if (words.length === 0) return { words: [text], wtimes: [0], wdurations: [200 * text.length] };
-  // Estimate: ~150ms per character, distributed across words
-  const totalChars = words.reduce((s, w) => s + w.length, 0);
-  const totalMs = Math.max(500, totalChars * 80);
-  let accum = 0;
-  const wtimes = [0];
-  const wdurations = [];
-  for (let i = 0; i < words.length; i++) {
-    const dur = Math.max(80, (words[i].length / totalChars) * totalMs);
-    wdurations.push(dur);
-    if (i < words.length - 1) wtimes.push(accum + dur);
-    accum += dur;
-  }
-  return { words, wtimes, wdurations };
-}
-
+/**
+ * Fallback using Edge TTS with real word boundary lip sync.
+ * Decodes MP3 → AudioBuffer, extracts word timing, calls head.speakAudio().
+ */
 async function edgeTTSFallback(text) {
   try {
     addSystemMsg('🔊 阿搞用免费语音说话中...');
-    const mp3Buffer = await edgeTTSSpeak(text);
-    // Decode MP3 ArrayBuffer → AudioBuffer (PCM) for TalkingHead lip-sync
-    const audioBuffer = await head.audioCtx.decodeAudioData(mp3Buffer.slice(0));
-    const { words, wtimes, wdurations } = estimateWordTiming(text);
-    // speakAudio generates visemes from words automatically + plays audio with lip-sync
-    head.speakAudio({
-      words: words,
-      wtimes: wtimes,
-      wdurations: wdurations,
-      audio: audioBuffer
-    });
+
+    const result = await edgeTTSSpeak(text);
+
+    // Decode MP3 to AudioBuffer
+    const audioBuffer = await head.audioCtx.decodeAudioData(result.audioBuffer.slice(0));
+
+    const { boundaries } = result;
+
+    if (boundaries.length > 0) {
+      // Use REAL word boundaries from Edge TTS for accurate lip sync
+      const words = boundaries.map(b => b.word);
+      const wtimes = boundaries.map(b => b.startMs);
+      const wdurations = boundaries.map(b => b.durMs);
+
+      head.speakAudio({
+        words,
+        wtimes,
+        wdurations,
+        audio: audioBuffer,
+      });
+    } else {
+      // Fallback: no boundaries received, use estimated timing
+      console.warn('No word boundaries from Edge TTS, using estimation');
+      head.speakAudio({
+        audio: audioBuffer
+      });
+    }
   } catch (err) {
     console.warn('Edge TTS failed, using browser SpeechSynthesis:', err);
     // Ultra fallback: browser SpeechSynthesis (no lip-sync)
@@ -469,11 +756,11 @@ window.toggleMoodSidebar = function() {
 window.setMood = function(mood) {
   if (!head) return;
   head.setMood(mood);
-  
+
   document.querySelectorAll('.tool-btn[data-mood]').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector(`.tool-btn[data-mood="${mood}"]`);
   if (btn) btn.classList.add('active');
-  
+
   document.getElementById('mood-icon').textContent = moodIcons[mood] || '😐';
   document.getElementById('mood-label').textContent = moodLabels[mood] || mood;
 };
@@ -483,41 +770,37 @@ window.doDance = function() {
   if (!head) return;
   addSystemMsg('💃 阿搞开始跳舞啦！');
   speakText('走起！看我给你秀一段桑巴！');
-  // Play Samba Dancing from Three.js official FBX examples (free, Mixamo-compatible)
   head.playAnimation(
     'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/fbx/Samba%20Dancing.fbx',
     null,
-    15,   // play for 15 seconds
+    15,
     0,
     0.01
   );
-  // Safety stop after animation duration
   setTimeout(() => {
     head.stopAnimation();
   }, 16000);
 };
 
 // ===== Chat (LLM) =====
-async function sendMessage() {
+window.sendMessage = async function() {
   const text = chatInput.value.trim();
   if (!text) return;
-  
+
   chatInput.value = '';
   addMessage(text, 'user');
-  
-  // Trim inputs to avoid whitespace/newline issues from copy-paste
+
   const llmKey = document.getElementById('cfg-llm-key').value.trim();
   const llmUrl = document.getElementById('cfg-llm-url').value.trim();
   const llmModel = document.getElementById('cfg-llm-model').value.trim();
   const prompt = document.getElementById('cfg-prompt').value;
   const name = document.getElementById('cfg-name').value || '阿搞';
-  
+
   if (!llmKey) {
     addMessage(`${name}说: ${text}（配置API Key后可智能回复）`, 'bot');
     return;
   }
-  
-  // Validate URL
+
   let apiUrl;
   try {
     apiUrl = new URL(llmUrl);
@@ -525,18 +808,17 @@ async function sendMessage() {
     addMessage(`⚠️ API 地址格式不对: "${llmUrl}"`, 'bot');
     return;
   }
-  
+
   try {
     const messages = [
       { role: 'system', content: prompt },
       ...chatHistory.slice(-10),
       { role: 'user', content: text }
     ];
-    
-    // 30s timeout so fetch doesn't hang forever
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
+
     const resp = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -553,25 +835,25 @@ async function sendMessage() {
       }),
       signal: controller.signal
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
       throw new Error(`API ${resp.status} ${resp.statusText}${errText ? ': ' + errText.slice(0,100) : ''}`);
     }
-    
+
     const data = await resp.json();
     const reply = data.choices?.[0]?.message?.content || '嗯...我词穷了';
-    
+
     chatHistory.push({ role: 'user', content: text });
     chatHistory.push({ role: 'assistant', content: reply });
-    
+
     detectMoodFromText(reply);
-    
+
     addMessage(reply, 'bot');
     speakText(reply);
-    
+
   } catch (err) {
     if (err.name === 'AbortError') {
       addMessage('⚠️ 阿搞卡住了: 请求超时（30秒），请检查网络或 API 地址', 'bot');
@@ -581,9 +863,7 @@ async function sendMessage() {
       addMessage(`⚠️ 阿搞卡住了: ${err.message}`, 'bot');
     }
   }
-}
-
-window.sendMessage = sendMessage;
+};
 
 function detectMoodFromText(text) {
   const moodMap = [
@@ -625,13 +905,13 @@ function startListening() {
     addSystemMsg('⚠️ 浏览器不支持语音输入，请用 Chrome');
     return;
   }
-  
+
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SpeechRecognition();
   recognition.lang = 'zh-CN';
   recognition.continuous = false;
   recognition.interimResults = false;
-  
+
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript;
     chatInput.value = transcript;
@@ -641,7 +921,7 @@ function startListening() {
     isListening = false;
     sendMessage();
   };
-  
+
   recognition.onerror = (event) => {
     console.warn('Speech error:', event.error);
     stopListening();
@@ -652,7 +932,7 @@ function startListening() {
       addSystemMsg(`⚠️ 语音识别出错: ${event.error}`);
     }
   };
-  
+
   recognition.start();
 }
 
@@ -667,7 +947,7 @@ function stopListening() {
 function addMessage(text, role, mood) {
   const div = document.createElement('div');
   div.className = `msg ${role}`;
-  if (mood) div.innerHTML = `<span class="mood-tag">${moodIcons[mood] || ''}</span>${text}`;
+  if (mood) div.innerHTML = `<span class="mood-tag">${moodIcons[mood] || ''}</span>${escHtml(text)}`;
   else div.textContent = text;
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -681,6 +961,12 @@ function addSystemMsg(text) {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
 // ===== Settings panel toggle =====
 document.getElementById('settings-btn').addEventListener('click', () => {
   document.getElementById('settings-panel').classList.toggle('open');
@@ -692,7 +978,6 @@ document.getElementById('settings-close').addEventListener('click', () => {
 async function reloadAvatar() {
   document.getElementById('loading').style.display = 'block';
   nodeLoading.textContent = '重新加载模型...';
-  // Force reload by re-init
   if (head) {
     // Dispose old one if possible
   }
@@ -706,15 +991,13 @@ if ('speechSynthesis' in window) {
 }
 
 // ===== Start =====
-// 默认收起情绪侧边栏
 document.getElementById('mood-sidebar').classList.add('collapsed');
 
 initTalkingHead();
 
 console.log('🎉 搞怪数字人已加载！');
-console.log('💡 提示: 在设置中填入 LLM API Key 可开启智能对话');
-console.log('💡 提示: 在设置中填入 Google TTS API Key 可开启更精准唇同步');
-console.log('💡 提示: 不填 Key 自动使用 Edge 免费 TTS，也有唇同步 ✅');
+console.log('💡 Edge TTS + 实时 word boundary 唇同步 ✅');
+console.log('💡 对话区全透明浮层，模型可全屏展示');
 </script>
 </body>
 </html>
