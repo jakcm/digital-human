@@ -103,4 +103,10 @@ assert.ok(anims.every(a => a.template.name === 'viseme'));
 assert.ok(anims.every(a => a.ts.length === 3 && a.ts.every(Number.isFinite)));
 assert.ok(anims.some(a => Object.keys(a.vs).some(k => k.startsWith('viseme_'))));
 
+const earlyAnims = buildAnimItems(fallbackVisemes, 1000, -120);
+assert.equal(earlyAnims[0].ts[1], anims[0].ts[1] - 120, 'negative offset should make lip sync lead audio');
+assert.ok(html.includes("id=\"cfg-lipsync-offset\""), 'UI exposes lip-sync offset tuning');
+assert.ok(html.includes("utterance.onstart") && html.includes("queueLipSync('speechSynthesis-onstart')"), 'manual fallback should anchor lip-sync to SpeechSynthesis onstart');
+assert.ok(html.includes("speechSynthesis-fallback-timer"), 'manual fallback keeps a safety net when onstart is blocked');
+
 console.log('edge/browser TTS lip-sync regression tests passed');

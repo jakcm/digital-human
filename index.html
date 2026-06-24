@@ -384,8 +384,13 @@
         <label>3D 模型 URL</label>
         <input id="cfg-model-url" value="https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb" placeholder="GLB/GLTF 模型URL">
       </div>
+      <div class="setting-group">
+        <label>唇形同步偏移（毫秒）</label>
+        <input id="cfg-lipsync-offset" type="number" value="-120" placeholder="-120">
+        <div class="hint">负数=嘴型提前，正数=嘴型延后。建议范围 -220 到 120。</div>
+      </div>
       <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
-      <div class="version-tag">v20260624-095802</div>
+      <div class="version-tag">v20260624-100550</div>
     </div>
   </div>
 
@@ -436,7 +441,7 @@ const moodLabels = { neutral: '中性', happy: '开心', love: '可爱', angry: 
 
 // ===== Load settings from localStorage =====
 function loadSettings() {
-  const keys = ['cfg-name','cfg-prompt','cfg-llm-key','cfg-llm-url','cfg-llm-model','cfg-tts-key','cfg-model-url'];
+  const keys = ['cfg-name','cfg-prompt','cfg-llm-key','cfg-llm-url','cfg-llm-model','cfg-tts-key','cfg-model-url','cfg-lipsync-offset'];
   keys.forEach(k => {
     const el = document.getElementById(k);
     const saved = localStorage.getItem(k);
@@ -446,7 +451,7 @@ function loadSettings() {
 loadSettings();
 
 function saveSettings() {
-  const keys = ['cfg-name','cfg-prompt','cfg-llm-key','cfg-llm-url','cfg-llm-model','cfg-tts-key','cfg-model-url'];
+  const keys = ['cfg-name','cfg-prompt','cfg-llm-key','cfg-llm-url','cfg-llm-model','cfg-tts-key','cfg-model-url','cfg-lipsync-offset'];
   keys.forEach(k => localStorage.setItem(k, document.getElementById(k).value));
   document.getElementById('settings-panel').classList.remove('open');
   addSystemMsg('设置已保存 ✅');
@@ -734,17 +739,24 @@ function edgeTTSEstimateBoundaries(text) {
   return boundaries.length ? boundaries : [{ word: 'a', startMs: 80, durMs: 250 }];
 }
 
-function edgeTTSBuildAnimItems(visemeData, clockStart = 0) {
+function getLipSyncOffsetMs() {
+  const el = document.getElementById('cfg-lipsync-offset');
+  const n = Number(el?.value);
+  if (!Number.isFinite(n)) return -120;
+  return Math.max(-300, Math.min(300, n));
+}
+
+function edgeTTSBuildAnimItems(visemeData, clockStart = 0, offsetMs = 0) {
   const anims = [];
   for (let i = 0; i < visemeData.visemes.length; i++) {
     const viseme = visemeData.visemes[i];
-    const time = clockStart + visemeData.vtimes[i];
+    const time = clockStart + offsetMs + visemeData.vtimes[i];
     const duration = visemeData.vdurations[i];
     anims.push({
       template: { name: 'viseme' },
-      ts: [time - 2 * duration / 3, time + duration / 2, time + duration + duration / 2],
+      ts: [time - 0.45 * duration, time + 0.20 * duration, time + 0.95 * duration],
       vs: {
-        ['viseme_' + viseme]: [null, (viseme === 'PP' || viseme === 'FF') ? 0.9 : 0.75, 0]
+        ['viseme_' + viseme]: [null, (viseme === 'PP' || viseme === 'FF') ? 0.95 : 0.82, 0]
       }
     });
   }
@@ -767,24 +779,34 @@ function playSpeechSynthesisWithManualLipSync(text) {
   const visemeData = edgeTTSBuildVisemes(boundaries);
   const payloadForDebug = { ...visemeData, estimatedBoundaries: boundaries };
 
-  // Queue the animation immediately. Do not wait for utterance.onstart: browsers may
-  // reject or delay SpeechSynthesis after async Edge-TTS failure, but TalkingHead's
-  // animQueue is available and verified to drive real viseme_* morph targets.
-  const clockStart = (head.animClock || 0) + 120;
-  try { head.lookAtCamera?.(500); } catch(e) {}
-  try { head.speakWithHands?.(); } catch(e) {}
-  try { head.resetLips?.(); } catch(e) {}
+  let lipSyncQueued = false;
+  let fallbackTimer = null;
+  const queueLipSync = (mode) => {
+    if (lipSyncQueued) return;
+    lipSyncQueued = true;
+    if (fallbackTimer) clearTimeout(fallbackTimer);
 
-  const anims = edgeTTSBuildAnimItems(visemeData, clockStart);
-  head.animQueue.push(...anims);
+    const offsetMs = getLipSyncOffsetMs();
+    // Anchor to the actual speech start when available. The offset is deliberately
+    // user-tunable: negative values make mouth shapes lead audio, which usually
+    // feels more natural visually than lagging behind speech.
+    const clockStart = (head.animClock || 0);
+    try { head.lookAtCamera?.(500); } catch(e) {}
+    try { head.speakWithHands?.(); } catch(e) {}
+    try { head.resetLips?.(); } catch(e) {}
 
-  debugState.lastSpeakAudioPayload = payloadForDebug;
-  debugState.lastSpeakAudioOptions = { mode: 'speechSynthesis-manual-animQueue' };
-  debugState.events.push({ type: 'speech-synthesis-manual-lipsync-queued', visemeCount: visemeData.visemes.length, animCount: anims.length, at: Date.now() });
-  console.log(`SpeechSynthesis manual lip sync: ${visemeData.visemes.length} visemes queued`, payloadForDebug);
+    const anims = edgeTTSBuildAnimItems(visemeData, clockStart, offsetMs);
+    head.animQueue.push(...anims);
+
+    debugState.lastSpeakAudioPayload = payloadForDebug;
+    debugState.lastSpeakAudioOptions = { mode, offsetMs };
+    debugState.events.push({ type: 'speech-synthesis-manual-lipsync-queued', mode, offsetMs, visemeCount: visemeData.visemes.length, animCount: anims.length, at: Date.now() });
+    console.log(`SpeechSynthesis manual lip sync: ${visemeData.visemes.length} visemes queued, offset ${offsetMs}ms`, payloadForDebug);
+  };
 
   utterance.onstart = () => {
     debugState.events.push({ type: 'speech-synthesis-start', at: Date.now() });
+    queueLipSync('speechSynthesis-onstart');
   };
 
   utterance.onend = () => {
@@ -801,6 +823,10 @@ function playSpeechSynthesisWithManualLipSync(text) {
 
   debugState.lastEdgeResult = { text, boundaryCount: 0, boundaries, estimated: true, reason: 'Edge TTS unavailable; SpeechSynthesis audio with manual TalkingHead animQueue lip-sync' };
   window.speechSynthesis.speak(utterance);
+
+  // Safety net for autoplay-blocked or delayed SpeechSynthesis implementations:
+  // keep lips moving, but prefer onstart when it fires quickly.
+  fallbackTimer = setTimeout(() => queueLipSync('speechSynthesis-fallback-timer'), 220);
   return true;
 }
 
