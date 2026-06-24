@@ -342,27 +342,39 @@ async function sendMessage() {
   chatInput.value = '';
   addMessage(text, 'user');
   
-  const llmKey = document.getElementById('cfg-llm-key').value;
-  const llmUrl = document.getElementById('cfg-llm-url').value;
-  const llmModel = document.getElementById('cfg-llm-model').value;
+  // Trim inputs to avoid whitespace/newline issues from copy-paste
+  const llmKey = document.getElementById('cfg-llm-key').value.trim();
+  const llmUrl = document.getElementById('cfg-llm-url').value.trim();
+  const llmModel = document.getElementById('cfg-llm-model').value.trim();
   const prompt = document.getElementById('cfg-prompt').value;
   const name = document.getElementById('cfg-name').value || '阿搞';
   
   if (!llmKey) {
-    // No LLM key - echo mode
     addMessage(`${name}说: ${text}（配置API Key后可智能回复）`, 'bot');
     return;
   }
   
+  // Validate URL
+  let apiUrl;
   try {
-    // Call LLM
+    apiUrl = new URL(llmUrl);
+  } catch {
+    addMessage(`⚠️ API 地址格式不对: "${llmUrl}"`, 'bot');
+    return;
+  }
+  
+  try {
     const messages = [
       { role: 'system', content: prompt },
       ...chatHistory.slice(-10),
       { role: 'user', content: text }
     ];
     
-    const resp = await fetch(llmUrl, {
+    // 30s timeout so fetch doesn't hang forever
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    const resp = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -375,8 +387,11 @@ async function sendMessage() {
         messages: messages,
         stream: false,
         max_tokens: 500
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
@@ -389,14 +404,19 @@ async function sendMessage() {
     chatHistory.push({ role: 'user', content: text });
     chatHistory.push({ role: 'assistant', content: reply });
     
-    // Detect mood from reply
     detectMoodFromText(reply);
     
     addMessage(reply, 'bot');
     speakText(reply);
     
   } catch (err) {
-    addMessage(`⚠️ 阿搞卡住了: ${err.message}`, 'bot');
+    if (err.name === 'AbortError') {
+      addMessage('⚠️ 阿搞卡住了: 请求超时（30秒），请检查网络或 API 地址', 'bot');
+    } else if (err.message === 'Failed to fetch' || err.message.includes('NetworkError')) {
+      addMessage('⚠️ 阿搞卡住了: 网络请求失败，请检查 API 地址和网络连接', 'bot');
+    } else {
+      addMessage(`⚠️ 阿搞卡住了: ${err.message}`, 'bot');
+    }
   }
 }
 
