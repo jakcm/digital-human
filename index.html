@@ -385,7 +385,7 @@
         <input id="cfg-model-url" value="https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb" placeholder="GLB/GLTF 模型URL">
       </div>
       <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
-      <div class="version-tag">v20260624-094529</div>
+      <div class="version-tag">v20260624-095737</div>
     </div>
   </div>
 
@@ -422,6 +422,14 @@ let isReady = false;
 let chatHistory = [];
 let isListening = false;
 let recognition = null;
+const debugState = {
+  lastEdgeResult: null,
+  lastSpeakAudioPayload: null,
+  lastSpeakAudioOptions: null,
+  lastError: null,
+  events: [],
+};
+window.__digitalHumanDebug = debugState;
 
 const moodIcons = { neutral: '😐', happy: '😄', love: '🥰', angry: '😤', sad: '😢', fear: '😨', disgust: '🤢', sleep: '😴' };
 const moodLabels = { neutral: '中性', happy: '开心', love: '可爱', angry: '生气', sad: '难过', fear: '害怕', disgust: '嫌弃', sleep: '犯困' };
@@ -481,6 +489,8 @@ async function initTalkingHead() {
   }
 
   head = new TalkingHead(nodeAvatar, config);
+  window.__digitalHumanHead = head;
+  debugState.events.push({ type: 'head-created', config: { lipsyncModules: config.lipsyncModules, lipsyncLang: config.lipsyncLang }, at: Date.now() });
 
   nodeLoading.textContent = '加载 3D 模型...';
 
@@ -680,17 +690,118 @@ function edgeTTSBuildVisemes(boundaries) {
   const visemes = [];
   const vtimes = [];
   const vdurations = [];
+  const words = [];
+  const wtimes = [];
+  const wdurations = [];
+
   for (const b of boundaries) {
     const tokens = edgeTTSTokenizeForVisemes(b.word);
     const totalDur = Math.max(b.durMs || 0, tokens.length * 70);
     const slot = totalDur / Math.max(tokens.length, 1);
+
     tokens.forEach((token, i) => {
-      visemes.push(edgeTTSVisemeForToken(token));
-      vtimes.push(Math.round(b.startMs + i * slot));
-      vdurations.push(Math.max(60, Math.round(slot)));
+      const t = Math.round(b.startMs + i * slot);
+      const d = Math.max(60, Math.round(slot));
+      const viseme = edgeTTSVisemeForToken(token);
+      const pseudoWord = String(token || b.word || viseme || 'a');
+
+      words.push(pseudoWord);
+      wtimes.push(t);
+      wdurations.push(d);
+      visemes.push(viseme);
+      vtimes.push(t);
+      vdurations.push(d);
     });
   }
-  return { visemes, vtimes, vdurations };
+
+  return { words, wtimes, wdurations, visemes, vtimes, vdurations };
+}
+
+function edgeTTSEstimateBoundaries(text) {
+  const parts = String(text || '').match(/[\u4e00-\u9fff]|[a-zA-Z]+|\d+|[，。！？,.!?]/g) || [];
+  const boundaries = [];
+  let t = 80;
+  for (const part of parts) {
+    if (/^[，。！？,.!?]$/.test(part)) {
+      t += /[。！？.!?]/.test(part) ? 360 : 180;
+      continue;
+    }
+    const isCjk = /^[\u4e00-\u9fff]$/.test(part);
+    const durMs = isCjk ? 170 : Math.max(220, Math.min(620, 120 + part.length * 45));
+    boundaries.push({ word: part, startMs: t, durMs });
+    t += durMs;
+  }
+  return boundaries.length ? boundaries : [{ word: 'a', startMs: 80, durMs: 250 }];
+}
+
+function edgeTTSBuildAnimItems(visemeData, clockStart = 0) {
+  const anims = [];
+  for (let i = 0; i < visemeData.visemes.length; i++) {
+    const viseme = visemeData.visemes[i];
+    const time = clockStart + visemeData.vtimes[i];
+    const duration = visemeData.vdurations[i];
+    anims.push({
+      template: { name: 'viseme' },
+      ts: [time - 2 * duration / 3, time + duration / 2, time + duration + duration / 2],
+      vs: {
+        ['viseme_' + viseme]: [null, (viseme === 'PP' || viseme === 'FF') ? 0.9 : 0.75, 0]
+      }
+    });
+  }
+  return anims;
+}
+
+function playSpeechSynthesisWithManualLipSync(text) {
+  if (!window.speechSynthesis || !head) return false;
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.rate = 1.1;
+  utterance.pitch = 1.2;
+  const voices = window.speechSynthesis.getVoices();
+  const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+  if (zhVoice) utterance.voice = zhVoice;
+
+  const boundaries = edgeTTSEstimateBoundaries(text);
+  const visemeData = edgeTTSBuildVisemes(boundaries);
+  const payloadForDebug = { ...visemeData, estimatedBoundaries: boundaries };
+
+  // Queue the animation immediately. Do not wait for utterance.onstart: browsers may
+  // reject or delay SpeechSynthesis after async Edge-TTS failure, but TalkingHead's
+  // animQueue is available and verified to drive real viseme_* morph targets.
+  const clockStart = (head.animClock || 0) + 120;
+  try { head.lookAtCamera?.(500); } catch(e) {}
+  try { head.speakWithHands?.(); } catch(e) {}
+  try { head.resetLips?.(); } catch(e) {}
+
+  const anims = edgeTTSBuildAnimItems(visemeData, clockStart);
+  head.animQueue.push(...anims);
+
+  debugState.lastSpeakAudioPayload = payloadForDebug;
+  debugState.lastSpeakAudioOptions = { mode: 'speechSynthesis-manual-animQueue' };
+  debugState.events.push({ type: 'speech-synthesis-manual-lipsync-queued', visemeCount: visemeData.visemes.length, animCount: anims.length, at: Date.now() });
+  console.log(`SpeechSynthesis manual lip sync: ${visemeData.visemes.length} visemes queued`, payloadForDebug);
+
+  utterance.onstart = () => {
+    debugState.events.push({ type: 'speech-synthesis-start', at: Date.now() });
+  };
+
+  utterance.onend = () => {
+    setTimeout(() => {
+      try { head.resetLips?.(); } catch(e) {}
+    }, 120);
+    debugState.events.push({ type: 'speech-synthesis-manual-lipsync-end', at: Date.now() });
+  };
+
+  utterance.onerror = (event) => {
+    debugState.lastError = { message: `SpeechSynthesis ${event.error || 'error'}`, at: Date.now() };
+    debugState.events.push({ type: 'speech-synthesis-error', message: event.error || 'error', at: Date.now() });
+  };
+
+  debugState.lastEdgeResult = { text, boundaryCount: 0, boundaries, estimated: true, reason: 'Edge TTS unavailable; SpeechSynthesis audio with manual TalkingHead animQueue lip-sync' };
+  window.speechSynthesis.speak(utterance);
+  return true;
 }
 
 /**
@@ -789,14 +900,8 @@ async function edgeTTSFallback(text) {
     if (boundaries.length > 0) {
       // Use REAL word boundaries from Edge TTS for timing, plus explicit visemes
       // so lip-sync survives without Google TTS and works for both English and Chinese.
-      const words = boundaries.map(b => b.word);
-      const wtimes = boundaries.map(b => b.startMs);
-      const wdurations = boundaries.map(b => b.durMs);
-      const { visemes, vtimes, vdurations } = edgeTTSBuildVisemes(boundaries);
-
-      console.log(`Edge TTS: ${boundaries.length} word boundaries, ${visemes.length} visemes, lip sync enabled`);
-
-      head.speakAudio({
+      const { words, wtimes, wdurations, visemes, vtimes, vdurations } = edgeTTSBuildVisemes(boundaries);
+      const payload = {
         words,
         wtimes,
         wdurations,
@@ -804,7 +909,16 @@ async function edgeTTSFallback(text) {
         vtimes,
         vdurations,
         audio: audioBuffer,
-      }, { lipsyncLang: 'en' });
+      };
+      const options = { lipsyncLang: 'en' };
+
+      debugState.lastEdgeResult = { text, boundaryCount: boundaries.length, boundaries, audioDuration: audioBuffer.duration };
+      debugState.lastSpeakAudioPayload = { words, wtimes, wdurations, visemes, vtimes, vdurations, audioDuration: audioBuffer.duration };
+      debugState.lastSpeakAudioOptions = options;
+      debugState.events.push({ type: 'edge-tts-speakAudio', boundaryCount: boundaries.length, visemeCount: visemes.length, audioDuration: audioBuffer.duration, at: Date.now() });
+      console.log(`Edge TTS: ${boundaries.length} word boundaries, ${visemes.length} visemes, lip sync enabled`, debugState.lastSpeakAudioPayload);
+
+      head.speakAudio(payload, options);
     } else {
       // Fallback: no boundaries received, estimate word timing from text + audio duration
       console.warn('No word boundaries from Edge TTS, using estimated timing');
@@ -813,33 +927,33 @@ async function edgeTTSFallback(text) {
       const perWord = audioDurMs / Math.max(words.length, 1);
       const wtimes = words.map((_, i) => Math.round(i * perWord));
       const wdurations = words.map(() => Math.round(perWord));
-      const { visemes, vtimes, vdurations } = edgeTTSBuildVisemes(
+      const estimated = edgeTTSBuildVisemes(
         words.map((word, i) => ({ word, startMs: wtimes[i], durMs: wdurations[i] }))
       );
-
-      head.speakAudio({
-        words,
-        wtimes,
-        wdurations,
-        visemes,
-        vtimes,
-        vdurations,
+      const payload = {
+        words: estimated.words,
+        wtimes: estimated.wtimes,
+        wdurations: estimated.wdurations,
+        visemes: estimated.visemes,
+        vtimes: estimated.vtimes,
+        vdurations: estimated.vdurations,
         audio: audioBuffer,
-      }, { lipsyncLang: 'en' });
+      };
+      const options = { lipsyncLang: 'en' };
+      debugState.lastEdgeResult = { text, boundaryCount: 0, boundaries: [], audioDuration: audioBuffer.duration, estimated: true };
+      debugState.lastSpeakAudioPayload = { ...payload, audio: undefined, audioDuration: audioBuffer.duration };
+      debugState.lastSpeakAudioOptions = options;
+      debugState.events.push({ type: 'edge-tts-speakAudio-estimated', visemeCount: estimated.visemes.length, audioDuration: audioBuffer.duration, at: Date.now() });
+
+      head.speakAudio(payload, options);
     }
   } catch (err) {
-    console.warn('Edge TTS failed, using browser SpeechSynthesis:', err);
-    // Ultra fallback: browser SpeechSynthesis (no lip-sync)
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.rate = 1.1;
-    utterance.pitch = 1.2;
-    const voices = window.speechSynthesis.getVoices();
-    const zhVoice = voices.find(v => v.lang.startsWith('zh'));
-    if (zhVoice) utterance.voice = zhVoice;
-    window.speechSynthesis.speak(utterance);
+    debugState.lastError = { message: err.message, stack: err.stack, at: Date.now() };
+    debugState.events.push({ type: 'edge-tts-error', message: err.message, at: Date.now() });
+    console.warn('Edge TTS failed, using browser SpeechSynthesis with manual TalkingHead lip-sync:', err);
+    // Browser WebSocket access to Edge TTS can be blocked (no audio/boundaries).
+    // Keep the free TTS fallback audible, but drive TalkingHead visemes manually.
+    playSpeechSynthesisWithManualLipSync(text);
   }
 }
 

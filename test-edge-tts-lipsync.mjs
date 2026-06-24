@@ -26,12 +26,16 @@ const source = [
   'edgeTTSVisemeForToken',
   'edgeTTSTokenizeForVisemes',
   'edgeTTSBuildVisemes',
+  'edgeTTSEstimateBoundaries',
+  'edgeTTSBuildAnimItems',
 ].map(extractFunctionSource).join('\n');
 const context = vm.createContext({});
 vm.runInContext(source, context);
 
 const parse = context.edgeTTSParseWordBoundary;
 const buildVisemes = context.edgeTTSBuildVisemes;
+const estimateBoundaries = context.edgeTTSEstimateBoundaries;
+const buildAnimItems = context.edgeTTSBuildAnimItems;
 
 function edgeMessage(body) {
   return `X-RequestId:test\r\nPath:audio.metadata\r\nContent-Type:application/json\r\n\r\n${JSON.stringify(body)}`;
@@ -82,10 +86,21 @@ const mixed = buildVisemes([
   { word: 'hello', startMs: 300, durMs: 500 },
 ]);
 assert.ok(mixed.visemes.length >= 4, 'mixed Chinese/English text should produce explicit visemes');
+assert.equal(mixed.words.length, mixed.visemes.length, 'words are split to viseme-level pseudo words so speakAudio cannot skip animation');
 assert.equal(mixed.visemes.length, mixed.vtimes.length);
 assert.equal(mixed.visemes.length, mixed.vdurations.length);
 assert.ok(mixed.vtimes.every(Number.isFinite));
 assert.ok(mixed.vdurations.every(d => d >= 60));
 assert.ok(!mixed.visemes.includes(undefined));
 
-console.log('edge TTS lip-sync regression tests passed');
+// SpeechSynthesis fallback must produce manual TalkingHead animQueue items.
+const estimated = estimateBoundaries('你好老板 hello world');
+assert.ok(estimated.length >= 4, 'Chinese/English fallback boundaries should be generated');
+const fallbackVisemes = buildVisemes(estimated);
+const anims = buildAnimItems(fallbackVisemes, 1000);
+assert.equal(anims.length, fallbackVisemes.visemes.length);
+assert.ok(anims.every(a => a.template.name === 'viseme'));
+assert.ok(anims.every(a => a.ts.length === 3 && a.ts.every(Number.isFinite)));
+assert.ok(anims.some(a => Object.keys(a.vs).some(k => k.startsWith('viseme_'))));
+
+console.log('edge/browser TTS lip-sync regression tests passed');
