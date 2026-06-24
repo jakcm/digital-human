@@ -56,28 +56,23 @@
     line-height: 1.5;
     animation: msgIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
     word-break: break-word;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5);
   }
   .msg.user {
     align-self: flex-end;
-    background: rgba(37,99,235,0.55);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    color: white;
+    background: transparent;
+    color: #b4d0ff;
     border-bottom-right-radius: 4px;
   }
   .msg.bot {
     align-self: flex-start;
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: transparent;
     color: #f0f0f0;
     border-bottom-left-radius: 4px;
   }
   .msg.system {
     align-self: center;
-    background: rgba(251,191,36,0.08);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: transparent;
     color: #fbbf24;
     font-size: 12px;
     border-radius: 20px;
@@ -390,7 +385,7 @@
         <input id="cfg-model-url" value="https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb" placeholder="GLB/GLTF 模型URL">
       </div>
       <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
-      <div class="version-tag">v20260624-083846</div>
+      <div class="version-tag">v20260624-100000</div>
     </div>
   </div>
 
@@ -470,7 +465,7 @@ async function initTalkingHead() {
     ttsApikey: ttsKey || null,
     ttsEndpoint: ttsKey ? 'https://texttospeech.googleapis.com/v1beta1/text:synthesize' : null,
     lipsyncModules: ['en', 'zh'],
-    lipsyncLang: 'en',
+    lipsyncLang: 'zh',
     avatarMood: 'neutral',
     modelMovementFactor: 0.8,
     cameraZoomEnable: true,
@@ -645,6 +640,7 @@ async function edgeTTSSpeak(text) {
   const ws = new WebSocket(url);
   const audioChunks = [];
   const boundaries = []; // {word, startMs, durMs}[]
+  let pendingReads = 0; // Track pending FileReader operations
 
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => { ws.close(); reject(new Error('Edge TTS timeout')); }, 30000);
@@ -663,25 +659,38 @@ async function edgeTTSSpeak(text) {
           ws.close();
           return;
         }
-        // Parse word boundary from Path:rbsp messages
+        // Parse word boundary from Path:rbsp / Path:response messages
         const wb = edgeTTSParseWordBoundary(event.data);
         if (wb) {
           boundaries.push(wb);
         }
       } else {
         // Binary message: extract audio data after "Path:audio\r\n" header
+        pendingReads++;
         const reader = new FileReader();
         reader.onload = () => {
           const arr = new Uint8Array(reader.result);
           const start = edgeTTSFindAudio(arr);
           if (start !== -1) audioChunks.push(arr.slice(start));
+          pendingReads--;
         };
         reader.readAsArrayBuffer(event.data);
       }
     };
 
     ws.onerror = () => { clearTimeout(timeout); reject(new Error('Edge TTS WebSocket error')); };
-    ws.onclose = () => { clearTimeout(timeout); resolve(); };
+    ws.onclose = () => {
+      clearTimeout(timeout);
+      // Wait for all pending FileReader operations to complete before resolving
+      const waitReads = () => {
+        if (pendingReads > 0) {
+          setTimeout(waitReads, 10);
+        } else {
+          resolve();
+        }
+      };
+      waitReads();
+    };
   });
 
   // Combine all audio chunks
@@ -718,18 +727,29 @@ async function edgeTTSFallback(text) {
       const wtimes = boundaries.map(b => b.startMs);
       const wdurations = boundaries.map(b => b.durMs);
 
+      console.log(`Edge TTS: ${boundaries.length} word boundaries received, lip sync enabled`);
+
       head.speakAudio({
         words,
         wtimes,
         wdurations,
         audio: audioBuffer,
-      });
+      }, { lipsyncLang: 'zh' });
     } else {
-      // Fallback: no boundaries received, use estimated timing
-      console.warn('No word boundaries from Edge TTS, using estimation');
+      // Fallback: no boundaries received, estimate word timing from text + audio duration
+      console.warn('No word boundaries from Edge TTS, using estimated timing');
+      const audioDurMs = audioBuffer.duration * 1000;
+      const words = text.split(/\s+|(?<![\s])/).filter(w => w.trim());
+      const perWord = audioDurMs / Math.max(words.length, 1);
+      const wtimes = words.map((_, i) => Math.round(i * perWord));
+      const wdurations = words.map(() => Math.round(perWord));
+
       head.speakAudio({
-        audio: audioBuffer
-      });
+        words,
+        wtimes,
+        wdurations,
+        audio: audioBuffer,
+      }, { lipsyncLang: 'zh' });
     }
   } catch (err) {
     console.warn('Edge TTS failed, using browser SpeechSynthesis:', err);
@@ -819,14 +839,20 @@ window.sendMessage = async function() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
+    // Build headers — only use OpenRouter-specific headers for openrouter.ai
+    const reqHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${llmKey}`,
+    };
+    if (apiUrl.hostname.includes('openrouter.ai')) {
+      reqHeaders['HTTP-Referer'] = window.location.origin || 'https://github.com';
+      reqHeaders['X-Title'] = 'Gaoguai Digital Human';
+    }
+
     const resp = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${llmKey}`,
-        'HTTP-Referer': window.location.origin,
-        'X-Title': 'Gaoguai Digital Human'
-      },
+      mode: 'cors',
+      headers: reqHeaders,
       body: JSON.stringify({
         model: llmModel,
         messages: messages,
@@ -857,8 +883,9 @@ window.sendMessage = async function() {
   } catch (err) {
     if (err.name === 'AbortError') {
       addMessage('⚠️ 阿搞卡住了: 请求超时（30秒），请检查网络或 API 地址', 'bot');
-    } else if (err.message === 'Failed to fetch' || err.message.includes('NetworkError')) {
-      addMessage('⚠️ 阿搞卡住了: 网络请求失败，请检查 API 地址和网络连接', 'bot');
+    } else if (err.message === 'Failed to fetch' || err.message.includes('NetworkError') || err.message.includes('network')) {
+      addMessage('⚠️ 阿搞卡住了: 网络请求失败，请检查 API 地址和网络连接。如果你用的是 Edge 浏览器，请尝试在设置→隐私中关闭"跟踪防护"或改用 Chrome。', 'bot');
+      console.error('Fetch error details:', err);
     } else {
       addMessage(`⚠️ 阿搞卡住了: ${err.message}`, 'bot');
     }
