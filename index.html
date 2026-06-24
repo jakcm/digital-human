@@ -137,7 +137,7 @@
       </div>
       <div class="setting-group">
         <label>3D 模型 URL</label>
-        <input id="cfg-model-url" value="https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes,mouthOpen,mouthSmile,eyesClosed,eyesLookUp,eyesLookDown&textureSizeLimit=1024&textureFormat=png" placeholder="GLB/GLTF 模型URL">
+        <input id="cfg-model-url" value="https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb" placeholder="GLB/GLTF 模型URL">
       </div>
       <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
     </div>
@@ -214,7 +214,7 @@ async function initTalkingHead() {
   nodeLoading.textContent = '初始化数字人引擎...';
   
   const modelUrl = document.getElementById('cfg-model-url').value || 
-    'https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb?morphTargets=ARKit,Oculus+Visemes,mouthOpen,mouthSmile,eyesClosed,eyesLookUp,eyesLookDown&textureSizeLimit=1024&textureFormat=png';
+    'https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb';
   const ttsKey = document.getElementById('cfg-tts-key').value;
 
   const config = {
