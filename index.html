@@ -135,7 +135,7 @@
       <div class="setting-group">
         <label>Google TTS API Key（说话用，免费 100万字符/月）</label>
         <input id="cfg-tts-key" type="password" placeholder="AIza...">
-        <div class="hint">不填则使用浏览器语音合成（无唇同步）</div>
+        <div class="hint">不填则使用 Edge 免费 TTS（有唇同步，国内直连）</div>
       </div>
       <div class="setting-group">
         <label>3D 模型 URL</label>
@@ -277,40 +277,159 @@ async function speakText(text) {
   const ttsKey = document.getElementById('cfg-tts-key').value;
   
   if (ttsKey) {
-    // Use Google TTS with lip sync
+    // Use Google TTS with lip sync (best quality)
     try {
       await head.speakText(text);
     } catch (err) {
-      console.warn('TTS failed, using fallback:', err);
-      fallbackSpeak(text);
+      console.warn('Google TTS failed, falling back to Edge TTS:', err);
+      await edgeTTSFallback(text);
     }
   } else {
-    // Use fallback: browser SpeechSynthesis
-    fallbackSpeak(text);
+    // Use free Edge TTS with lip sync (no key needed)
+    await edgeTTSFallback(text);
   }
 }
 
-function fallbackSpeak(text) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'zh-CN';
-  utterance.rate = 1.1;
-  utterance.pitch = 1.2;
-  // Get Chinese voice
-  const voices = window.speechSynthesis.getVoices();
-  const zhVoice = voices.find(v => v.lang.startsWith('zh'));
-  if (zhVoice) utterance.voice = zhVoice;
-  window.speechSynthesis.speak(utterance);
+// ===== Edge TTS (免费，不需要API Key，国内直连) =====
+const EDGE_TTS_CONFIG = {
+  TRUSTED_CLIENT_TOKEN: "6A5AA1D4EAFF4E9FB37E23D68491D6F4",
+  WSS_URL: "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1",
+  VOICES_URL: "https://api.msedgeservices.com/tts/cognitiveservices/voices/list",
+  VERSION_MS_GEC: "1-142.0.3595",
+};
+
+function edgeTTSGenerateUUID() {
+  return 'xxxxxxxx-xxxx-xxxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+function edgeTTSGenerateToken() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2,"0").toUpperCase()).join('');
+}
+
+async function edgeTTSGenerateSecMsGec(token) {
+  const now = new Date().toUTCString();
+  const date = new Date(now);
+  const ticks = Math.floor(date.getTime() / 1000) + 11644473600;
+  const rounded = ticks - (ticks % 300);
+  const windowsTicks = rounded * 10000000;
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(`${windowsTicks}${token}`));
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+
+function edgeTTSCreateSSML(text, voice) {
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="zh-CN"><voice name="${voice}"><prosody rate="0%" pitch="0Hz">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}</prosody></voice></speak>`;
+}
+
+function edgeTTSBuildConfig() {
+  const ts = new Date().toUTCString();
+  return `X-Timestamp:${ts}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":false,"wordBoundaryEnabled":true},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`;
+}
+
+function edgeTTSFindAudio(arr) {
+  const needle = new TextEncoder().encode("Path:audio\r\n");
+  for (let i = 0; i <= arr.length - needle.length; i++) {
+    let match = true;
+    for (let j = 0; j < needle.length; j++) {
+      if (arr[i + j] !== needle[j]) { match = false; break; }
+    }
+    if (match) return i + needle.length;
+  }
+  return -1;
+}
+
+async function edgeTTSSpeak(text) {
+  const voice = 'zh-CN-XiaoxiaoNeural'; // 晓晓，自然中文女声
+  const secMsGEC = await edgeTTSGenerateSecMsGec(EDGE_TTS_CONFIG.TRUSTED_CLIENT_TOKEN);
+  const reqId = edgeTTSGenerateUUID();
+  const url = `${EDGE_TTS_CONFIG.WSS_URL}?Ocp-Apim-Subscription-Key=${EDGE_TTS_CONFIG.TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${secMsGEC}&Sec-MS-GEC-Version=${EDGE_TTS_CONFIG.VERSION_MS_GEC}&ConnectionId=${reqId}`;
   
-  // Simple lip animation without precise viseme sync
-  if (head && head._avatar) {
-    animateMouth(text.length * 60);
-  }
+  const ws = new WebSocket(url);
+  const audioChunks = [];
+  
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { ws.close(); reject(new Error('Edge TTS timeout')); }, 30000);
+    ws.onopen = () => {
+      ws.send(edgeTTSBuildConfig());
+      ws.send(`X-RequestId:${reqId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${new Date().toUTCString()}\r\nPath:ssml\r\n\r\n${edgeTTSCreateSSML(text, voice)}`);
+    };
+    ws.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        if (event.data.includes('Path:turn.end')) ws.close();
+      } else {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const arr = new Uint8Array(reader.result);
+          const start = edgeTTSFindAudio(arr);
+          if (start !== -1) audioChunks.push(arr.slice(start));
+        };
+        reader.readAsArrayBuffer(event.data);
+      }
+    };
+    ws.onerror = () => { clearTimeout(timeout); reject(new Error('Edge TTS WebSocket error')); };
+    ws.onclose = () => { clearTimeout(timeout); resolve(); };
+  });
+  
+  // Combine chunks
+  const total = audioChunks.reduce((acc, c) => acc + c.length, 0);
+  const combined = new Uint8Array(total);
+  let off = 0;
+  for (const chunk of audioChunks) { combined.set(chunk, off); off += chunk.length; }
+  if (combined.length === 0) throw new Error('No audio received from Edge TTS');
+  return combined.buffer;
 }
 
-function animateMouth(duration) {
-  // Minimal mouth movement for fallback mode
+// Split text into words with estimated timing for lip-sync
+function estimateWordTiming(text) {
+  // Split by spaces/punctuation for word-level timing
+  const words = text.match(/[\p{L}\p{N}]+|[^\p{L}\p{N}\s]/gu) || [text];
+  if (words.length === 0) return { words: [text], wtimes: [0], wdurations: [200 * text.length] };
+  // Estimate: ~150ms per character, distributed across words
+  const totalChars = words.reduce((s, w) => s + w.length, 0);
+  const totalMs = Math.max(500, totalChars * 80);
+  let accum = 0;
+  const wtimes = [0];
+  const wdurations = [];
+  for (let i = 0; i < words.length; i++) {
+    const dur = Math.max(80, (words[i].length / totalChars) * totalMs);
+    wdurations.push(dur);
+    if (i < words.length - 1) wtimes.push(accum + dur);
+    accum += dur;
+  }
+  return { words, wtimes, wdurations };
+}
+
+async function edgeTTSFallback(text) {
+  try {
+    addSystemMsg('🔊 阿搞用免费语音说话中...');
+    const mp3Buffer = await edgeTTSSpeak(text);
+    const { words, wtimes, wdurations } = estimateWordTiming(text);
+    // speakAudio generates visemes from words automatically + plays audio with lip-sync
+    head.speakAudio({
+      words: words,
+      wtimes: wtimes,
+      wdurations: wdurations,
+      audio: mp3Buffer
+    });
+  } catch (err) {
+    console.warn('Edge TTS failed, using browser SpeechSynthesis:', err);
+    // Ultra fallback: browser SpeechSynthesis (no lip-sync)
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.rate = 1.1;
+    utterance.pitch = 1.2;
+    const voices = window.speechSynthesis.getVoices();
+    const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+    if (zhVoice) utterance.voice = zhVoice;
+    window.speechSynthesis.speak(utterance);
+  }
 }
 
 // ===== Mood =====
@@ -577,7 +696,8 @@ initTalkingHead();
 
 console.log('🎉 搞怪数字人已加载！');
 console.log('💡 提示: 在设置中填入 LLM API Key 可开启智能对话');
-console.log('💡 提示: 在设置中填入 Google TTS API Key 可开启唇同步说话');
+console.log('💡 提示: 在设置中填入 Google TTS API Key 可开启更精准唇同步');
+console.log('💡 提示: 不填 Key 自动使用 Edge 免费 TTS，也有唇同步 ✅');
 </script>
 </body>
 </html>
