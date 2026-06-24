@@ -109,4 +109,11 @@ assert.ok(html.includes("id=\"cfg-lipsync-offset\""), 'UI exposes lip-sync offse
 assert.ok(html.includes("utterance.onstart") && html.includes("queueLipSync('speechSynthesis-onstart')"), 'manual fallback should anchor lip-sync to SpeechSynthesis onstart');
 assert.ok(html.includes("speechSynthesis-fallback-timer"), 'manual fallback keeps a safety net when onstart is blocked');
 
-console.log('edge/browser TTS lip-sync regression tests passed');
+// LLM browser fetch should use minimal headers for Microsoft Edge compatibility.
+// Extra OpenRouter metadata headers can be treated as tracker-like third-party
+// request metadata by strict Edge privacy settings and cause TypeError: Failed to fetch.
+assert.ok(!html.includes("HTTP-Referer"), 'LLM fetch must not send HTTP-Referer header from browser');
+assert.ok(!html.includes("X-Title"), 'LLM fetch must not send X-Title header from browser');
+assert.ok(html.includes('normalizeLLMUrl'), 'LLM URL should be normalized before fetch');
+
+console.log('edge/browser TTS + LLM fetch regression tests passed');

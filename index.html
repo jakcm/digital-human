@@ -390,7 +390,7 @@
         <div class="hint">负数=嘴型提前，正数=嘴型延后。建议范围 -220 到 120。</div>
       </div>
       <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
-      <div class="version-tag">v20260624-100610</div>
+      <div class="version-tag">v20260624-101832</div>
     </div>
   </div>
 
@@ -1019,6 +1019,17 @@ window.doDance = function() {
 };
 
 // ===== Chat (LLM) =====
+function normalizeLLMUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  const path = url.pathname.replace(/\/+$/, '');
+  if (url.hostname.includes('openrouter.ai')) {
+    if (path === '' || path === '/api/v1') {
+      url.pathname = '/api/v1/chat/completions';
+    }
+  }
+  return url;
+}
+
 window.sendMessage = async function() {
   const text = chatInput.value.trim();
   if (!text) return;
@@ -1039,7 +1050,7 @@ window.sendMessage = async function() {
 
   let apiUrl;
   try {
-    apiUrl = new URL(llmUrl);
+    apiUrl = normalizeLLMUrl(llmUrl);
   } catch {
     addMessage(`⚠️ API 地址格式不对: "${llmUrl}"`, 'bot');
     return;
@@ -1055,17 +1066,15 @@ window.sendMessage = async function() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    // Build headers — only use OpenRouter-specific headers for openrouter.ai
+    // Keep browser LLM requests minimal for Microsoft Edge compatibility.
+    // Some Edge privacy/tracking settings block third-party requests with extra
+    // metadata headers even when the API CORS preflight allows them.
     const reqHeaders = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${llmKey}`,
     };
-    if (apiUrl.hostname.includes('openrouter.ai')) {
-      reqHeaders['HTTP-Referer'] = window.location.origin || 'https://github.com';
-      reqHeaders['X-Title'] = 'Gaoguai Digital Human';
-    }
 
-    const resp = await fetch(apiUrl, {
+    const resp = await fetch(apiUrl.toString(), {
       method: 'POST',
       mode: 'cors',
       headers: reqHeaders,
@@ -1100,8 +1109,8 @@ window.sendMessage = async function() {
     if (err.name === 'AbortError') {
       addMessage('⚠️ 阿搞卡住了: 请求超时（30秒），请检查网络或 API 地址', 'bot');
     } else if (err.message === 'Failed to fetch' || err.message.includes('NetworkError') || err.message.includes('network')) {
-      addMessage('⚠️ 阿搞卡住了: 网络请求失败，请检查 API 地址和网络连接。如果你用的是 Edge 浏览器，请尝试在设置→隐私中关闭"跟踪防护"或改用 Chrome。', 'bot');
-      console.error('Fetch error details:', err);
+      addMessage('⚠️ 阿搞卡住了: 浏览器无法连接 LLM API。请确认 API 地址是 https://openrouter.ai/api/v1/chat/completions，Key 没有多余空格；如果仍失败，打开开发者工具 Console 查看 fetch 详情。', 'bot');
+      console.error('LLM fetch failed:', { url: apiUrl.toString(), host: apiUrl.hostname, message: err.message, error: err });
     } else {
       addMessage(`⚠️ 阿搞卡住了: ${err.message}`, 'bot');
     }
