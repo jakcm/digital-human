@@ -385,7 +385,7 @@
         <input id="cfg-model-url" value="https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb" placeholder="GLB/GLTF 模型URL">
       </div>
       <button class="btn btn-primary" onclick="saveSettings()" style="width:100%;margin-top:10px;">💾 保存设置</button>
-      <div class="version-tag">v20260624-085205</div>
+      <div class="version-tag">v20260624-094455</div>
     </div>
   </div>
 
@@ -464,8 +464,10 @@ async function initTalkingHead() {
     cameraView: 'full',
     ttsApikey: ttsKey || null,
     ttsEndpoint: ttsKey ? 'https://texttospeech.googleapis.com/v1beta1/text:synthesize' : null,
-    lipsyncModules: ['en', 'zh'],
-    lipsyncLang: 'zh',
+    // TalkingHead 1.7 has no bundled lipsync-zh.mjs. Edge TTS fallback below
+    // provides explicit viseme timings, so keep built-in lip-sync on a known-good module.
+    lipsyncModules: ['en'],
+    lipsyncLang: 'en',
     avatarMood: 'neutral',
     modelMovementFactor: 0.8,
     cameraZoomEnable: true,
@@ -584,8 +586,8 @@ function edgeTTSFindAudio(arr) {
 }
 
 /**
- * Parse word boundary JSON from Edge TTS text messages (Path:rbsp).
- * Handles both nested (Data: {Offset, Duration, text: {Text}}) and flat (offset, duration, text) formats.
+ * Parse word boundary JSON from Edge TTS text messages (Path:audio.metadata / Path:rbsp).
+ * Handles the current Metadata[] protocol plus older nested/flat formats.
  * Returns {word, startMs, durMs} or null.
  */
 function edgeTTSParseWordBoundary(textMsg) {
@@ -595,24 +597,31 @@ function edgeTTSParseWordBoundary(textMsg) {
     if (parts.length < 2) return null;
     const json = JSON.parse(parts[parts.length - 1]);
 
-    if (json.type !== 'WordBoundary' && json.type !== 'wordBoundary') return null;
+    let item = json;
+    if (Array.isArray(json.Metadata)) {
+      item = json.Metadata.find(m => String(m.Type || m.type || '').toLowerCase() === 'wordboundary');
+      if (!item) return null;
+    }
+
+    const eventType = String(item.Type || item.type || '').toLowerCase();
+    if (eventType !== 'wordboundary') return null;
 
     let word, offset, duration;
 
-    if (json.Data && json.Data.text) {
+    if (item.Data && item.Data.text) {
       // Nested format: {Data: {Offset, Duration, text: {Text}}}
-      word = json.Data.text.Text || json.Data.text.text;
-      offset = json.Data.Offset || 0;
-      duration = json.Data.Duration || 0;
+      word = item.Data.text.Text || item.Data.text.text;
+      offset = item.Data.Offset || 0;
+      duration = item.Data.Duration || 0;
     } else {
       // Flat format: {Text, Offset, Duration} or {text, offset, duration}
-      word = json.Text || json.text || '';
-      offset = json.Offset !== undefined ? json.Offset : (json.offset || 0);
-      duration = json.Duration !== undefined ? json.Duration : (json.duration || 0);
+      word = item.Text || item.text || '';
+      offset = item.Offset !== undefined ? item.Offset : (item.offset || 0);
+      duration = item.Duration !== undefined ? item.Duration : (item.duration || 0);
     }
 
     // Skip non-word boundaries (sentence boundaries, etc.)
-    const boundaryType = (json.Data?.text?.BoundaryType || json.boundaryType || '').toLowerCase();
+    const boundaryType = (item.Data?.text?.BoundaryType || item.boundaryType || '').toLowerCase();
     if (boundaryType === 'sentence') return null;
 
     // Skip empty words
@@ -626,6 +635,62 @@ function edgeTTSParseWordBoundary(textMsg) {
   } catch (e) {
     return null;
   }
+}
+
+function edgeTTSVisemeForToken(token) {
+  const s = String(token || '').toLowerCase();
+  if (!s) return 'sil';
+  if (/^[\u4e00-\u9fff]$/.test(s)) {
+    // No browser-side Chinese phonemizer is bundled. Use deterministic, varied
+    // open-mouth visemes per Han character so Chinese Edge TTS still animates.
+    return ['aa', 'E', 'I', 'O', 'U'][s.charCodeAt(0) % 5];
+  }
+  if (/^(b|p|m)/.test(s)) return 'PP';
+  if (/^(f|v)/.test(s)) return 'FF';
+  if (/^th/.test(s)) return 'TH';
+  if (/^(ch|sh|j)/.test(s)) return 'CH';
+  if (/^(s|z|c|x)/.test(s)) return 'SS';
+  if (/^(d|t|l)/.test(s)) return 'DD';
+  if (/^n/.test(s)) return 'nn';
+  if (/^r/.test(s)) return 'RR';
+  if (/^(k|g|q)/.test(s)) return 'kk';
+  if (/[a]/.test(s)) return 'aa';
+  if (/[e]/.test(s)) return 'E';
+  if (/[i|y]/.test(s)) return 'I';
+  if (/[o]/.test(s)) return 'O';
+  if (/[u|w]/.test(s)) return 'U';
+  return 'aa';
+}
+
+function edgeTTSTokenizeForVisemes(word) {
+  const tokens = [];
+  const parts = String(word || '').match(/[\u4e00-\u9fff]|th|ch|sh|[a-zA-Z]+|\d/g) || [];
+  for (const part of parts) {
+    if (/^[a-zA-Z]+$/.test(part)) {
+      const clusters = part.match(/th|ch|sh|[bcdfghjklmnpqrstvwxyz]+|[aeiouy]+/gi) || [part];
+      tokens.push(...clusters);
+    } else {
+      tokens.push(part);
+    }
+  }
+  return tokens.length ? tokens : [word];
+}
+
+function edgeTTSBuildVisemes(boundaries) {
+  const visemes = [];
+  const vtimes = [];
+  const vdurations = [];
+  for (const b of boundaries) {
+    const tokens = edgeTTSTokenizeForVisemes(b.word);
+    const totalDur = Math.max(b.durMs || 0, tokens.length * 70);
+    const slot = totalDur / Math.max(tokens.length, 1);
+    tokens.forEach((token, i) => {
+      visemes.push(edgeTTSVisemeForToken(token));
+      vtimes.push(Math.round(b.startMs + i * slot));
+      vdurations.push(Math.max(60, Math.round(slot)));
+    });
+  }
+  return { visemes, vtimes, vdurations };
 }
 
 /**
@@ -722,34 +787,45 @@ async function edgeTTSFallback(text) {
     const { boundaries } = result;
 
     if (boundaries.length > 0) {
-      // Use REAL word boundaries from Edge TTS for accurate lip sync
+      // Use REAL word boundaries from Edge TTS for timing, plus explicit visemes
+      // so lip-sync survives without Google TTS and works for both English and Chinese.
       const words = boundaries.map(b => b.word);
       const wtimes = boundaries.map(b => b.startMs);
       const wdurations = boundaries.map(b => b.durMs);
+      const { visemes, vtimes, vdurations } = edgeTTSBuildVisemes(boundaries);
 
-      console.log(`Edge TTS: ${boundaries.length} word boundaries received, lip sync enabled`);
+      console.log(`Edge TTS: ${boundaries.length} word boundaries, ${visemes.length} visemes, lip sync enabled`);
 
       head.speakAudio({
         words,
         wtimes,
         wdurations,
+        visemes,
+        vtimes,
+        vdurations,
         audio: audioBuffer,
-      }, { lipsyncLang: 'zh' });
+      }, { lipsyncLang: 'en' });
     } else {
       // Fallback: no boundaries received, estimate word timing from text + audio duration
       console.warn('No word boundaries from Edge TTS, using estimated timing');
       const audioDurMs = audioBuffer.duration * 1000;
-      const words = text.split(/\s+|(?<![\s])/).filter(w => w.trim());
+      const words = text.match(/[\u4e00-\u9fff]|[a-zA-Z0-9]+/g) || [text];
       const perWord = audioDurMs / Math.max(words.length, 1);
       const wtimes = words.map((_, i) => Math.round(i * perWord));
       const wdurations = words.map(() => Math.round(perWord));
+      const { visemes, vtimes, vdurations } = edgeTTSBuildVisemes(
+        words.map((word, i) => ({ word, startMs: wtimes[i], durMs: wdurations[i] }))
+      );
 
       head.speakAudio({
         words,
         wtimes,
         wdurations,
+        visemes,
+        vtimes,
+        vdurations,
         audio: audioBuffer,
-      }, { lipsyncLang: 'zh' });
+      }, { lipsyncLang: 'en' });
     }
   } catch (err) {
     console.warn('Edge TTS failed, using browser SpeechSynthesis:', err);
