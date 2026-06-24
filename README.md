@@ -18,9 +18,9 @@
 
 ### 配置
 
-1. **LLM API Key** — 开启智能对话（支持 DeepSeek / OpenAI 兼容 API）
-   - 推荐 DeepSeek：`https://api.deepseek.com/v1/chat/completions`
-   - 模型：`deepseek-chat`
+1. **LLM API Key** — 开启智能对话（支持 OpenAI 兼容 API）
+   - 推荐 OpenRouter（一站式多模型）：`https://openrouter.ai/api/v1/chat/completions`
+   - 模型示例：`deepseek/deepseek-v4-flash`、`openai/gpt-4o`
 2. **Google TTS API Key** — 开启唇同步说话
    - 免费额度：100 万字符/月
    - 不填则使用浏览器 SpeechSynthesis（无唇同步）

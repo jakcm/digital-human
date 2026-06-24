@@ -73,8 +73,9 @@
   /* ===== Mobile ===== */
   @media (max-width: 768px) {
     #app { flex-direction: column; }
-    #viewport { height: 50vh; flex: none; }
-    #chat-panel { width: 100%; min-width: unset; height: 50vh; }
+    #viewport { height: 50dvh; flex: none; }
+    #chat-panel { width: 100%; min-width: unset; height: 50dvh; overflow: hidden; }
+    #chat-messages { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
     #toolbar { bottom: 10px; gap: 4px; }
     .tool-btn { padding: 6px 10px; font-size: 11px; }
     .tool-btn .icon { font-size: 14px; }
@@ -124,11 +125,11 @@
       </div>
       <div class="setting-group">
         <label>LLM API 地址</label>
-        <input id="cfg-llm-url" value="https://api.deepseek.com/v1/chat/completions" placeholder="https://api.openai.com/v1/chat/completions">
+        <input id="cfg-llm-url" value="https://openrouter.ai/api/v1/chat/completions" placeholder="https://openrouter.ai/api/v1/chat/completions">
       </div>
       <div class="setting-group">
         <label>LLM 模型名</label>
-        <input id="cfg-llm-model" value="deepseek-chat" placeholder="gpt-3.5-turbo">
+        <input id="cfg-llm-model" value="deepseek/deepseek-v4-flash" placeholder="openai/gpt-4o">
       </div>
       <div class="setting-group">
         <label>Google TTS API Key（说话用，免费 100万字符/月）</label>
@@ -363,7 +364,12 @@ async function sendMessage() {
     
     const resp = await fetch(llmUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${llmKey}` },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${llmKey}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': '搞怪数字人'
+      },
       body: JSON.stringify({
         model: llmModel,
         messages: messages,
@@ -371,6 +377,11 @@ async function sendMessage() {
         max_tokens: 500
       })
     });
+    
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      throw new Error(`API ${resp.status} ${resp.statusText}${errText ? ': ' + errText.slice(0,100) : ''}`);
+    }
     
     const data = await resp.json();
     const reply = data.choices?.[0]?.message?.content || '嗯...我词穷了';
