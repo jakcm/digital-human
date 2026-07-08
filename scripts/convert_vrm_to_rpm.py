@@ -60,13 +60,20 @@ BONE_MAP = {
     'J_Bip_R_Ring2': 'RightHandRing2',
     'J_Bip_L_Ring3': 'LeftHandRing3',
     'J_Bip_R_Ring3': 'RightHandRing3',
-    # Little → Pinky
+    # Little → Pinky (include post-rename fallback in case already partially converted)
     'J_Bip_L_Little1': 'LeftHandPinky1',
     'J_Bip_R_Little1': 'RightHandPinky1',
     'J_Bip_L_Little2': 'LeftHandPinky2',
     'J_Bip_R_Little2': 'RightHandPinky2',
     'J_Bip_L_Little3': 'LeftHandPinky3',
     'J_Bip_R_Little3': 'RightHandPinky3',
+    # Also handle if Little was already partially renamed to LeftHand but not Pinky
+    'LeftHandLittle1': 'LeftHandPinky1',
+    'RightHandLittle1': 'RightHandPinky1',
+    'LeftHandLittle2': 'LeftHandPinky2',
+    'RightHandLittle2': 'RightHandPinky2',
+    'LeftHandLittle3': 'LeftHandPinky3',
+    'RightHandLittle3': 'RightHandPinky3',
     # Thumb
     'J_Bip_L_Thumb1': 'LeftHandThumb1',
     'J_Bip_R_Thumb1': 'RightHandThumb1',
