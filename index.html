@@ -381,6 +381,20 @@
         <div class="hint">不填则使用 Edge 免费 TTS（含精准唇同步 ✅）</div>
       </div>
       <div class="setting-group">
+        <label>模型来源</label>
+        <div id="cfg-model-source" style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);transition:all 0.2s;">
+            <input type="radio" name="model-source" value="builtin" style="accent-color:#2563eb;">
+            <span>🏰 内置公主模型</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.06);transition:all 0.2s;">
+            <input type="radio" name="model-source" value="remote" style="accent-color:#2563eb;">
+            <span>🌐 远程模型 URL</span>
+          </label>
+        </div>
+        <div class="hint" id="model-source-hint">内置公主模型，可爱又省心 ✨</div>
+      </div>
+      <div class="setting-group" id="cfg-model-url-group">
         <label>3D 模型 URL</label>
         <input id="cfg-model-url" value="https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb" placeholder="GLB/GLTF 模型URL">
       </div>
@@ -447,17 +461,53 @@ function loadSettings() {
     const saved = localStorage.getItem(k);
     if (saved) el.value = saved;
   });
+  // Restore model source selection
+  const savedSource = localStorage.getItem('cfg-model-source') || 'builtin';
+  const radios = document.querySelectorAll('input[name="model-source"]');
+  radios.forEach(r => { if (r.value === savedSource) r.checked = true; });
+  toggleModelSourceUI(savedSource);
 }
 loadSettings();
+
+function toggleModelSourceUI(source) {
+  const urlGroup = document.getElementById('cfg-model-url-group');
+  const hint = document.getElementById('model-source-hint');
+  if (source === 'builtin') {
+    urlGroup.style.display = 'none';
+    hint.textContent = '内置公主模型，可爱又省心 ✨';
+  } else {
+    urlGroup.style.display = 'block';
+    hint.textContent = '输入任意 GLB/GLTF 模型 URL';
+  }
+}
 
 function saveSettings() {
   const keys = ['cfg-name','cfg-prompt','cfg-llm-key','cfg-llm-url','cfg-llm-model','cfg-tts-key','cfg-model-url','cfg-lipsync-offset'];
   keys.forEach(k => localStorage.setItem(k, document.getElementById(k).value));
+  // Save model source selection
+  const selected = document.querySelector('input[name="model-source"]:checked');
+  if (selected) localStorage.setItem('cfg-model-source', selected.value);
   document.getElementById('settings-panel').classList.remove('open');
   addSystemMsg('设置已保存 ✅');
   if (isReady && head) reloadAvatar();
 }
 window.saveSettings = saveSettings;
+
+function getModelUrl() {
+  const selected = document.querySelector('input[name="model-source"]:checked');
+  if (selected && selected.value === 'builtin') {
+    return 'models/princess.glb';
+  }
+  return document.getElementById('cfg-model-url').value ||
+    'https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb';
+}
+
+// Model source radio change handler
+document.querySelectorAll('input[name="model-source"]').forEach(r => {
+  r.addEventListener('change', () => {
+    if (r.checked) toggleModelSourceUI(r.value);
+  });
+});
 
 // ===== DOM refs =====
 const nodeAvatar = document.getElementById('viewport');
@@ -469,8 +519,7 @@ const chatInput = document.getElementById('chat-input');
 async function initTalkingHead() {
   nodeLoading.textContent = '初始化数字人引擎...';
 
-  const modelUrl = document.getElementById('cfg-model-url').value ||
-    'https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@main/avatars/brunette.glb';
+  const modelUrl = getModelUrl();
   const ttsKey = document.getElementById('cfg-tts-key').value;
 
   const config = {
