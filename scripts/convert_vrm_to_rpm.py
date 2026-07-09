@@ -172,9 +172,10 @@ def process_glb(input_path, output_path):
         for prim in mesh.get('primitives', []):
             rename_morph_names(prim.get('extras', {}), morph_renames)
 
-    # 4. Reorganize scene graph: make mesh nodes children of Armature
-    # TalkingHead traverses armature children to find morph targets.
-    # In VRM, mesh nodes (Face, Body, Hair) are siblings of the root bone.
+    # 4. Reorganize scene graph: make ALL non-bone scene nodes children of Armature
+    # TalkingHead traverses armature.children to find morph targets, but VRM models
+    # have mesh nodes (Face/Body/Hair) at scene root level. GLTFLoader with skinned
+    # meshes handles reparenting differently, so we need EVERYTHING under Armature.
     armature_idx = None
     for i, node in enumerate(nodes):
         if node.get('name') == 'Armature':
@@ -182,32 +183,27 @@ def process_glb(input_path, output_path):
             break
     
     if armature_idx is not None:
-        # Find all mesh nodes by checking node.mesh property
-        mesh_node_indices = [i for i, n in enumerate(nodes) if n.get('mesh') is not None]
-        
-        # Add mesh nodes as children of Armature
-        armature_node = nodes[armature_idx]
-        if 'children' not in armature_node:
-            armature_node['children'] = []
-        
-        existing = set(armature_node['children'])
-        for idx in mesh_node_indices:
-            if idx not in existing:
-                armature_node['children'].append(idx)
-                bone_renames.append((f"Node {idx} ({nodes[idx].get('name','?')})", f"→ child of Armature"))
-        
-        # Remove mesh nodes from the scene root
         scene = gltf.get('scenes', [None])[0]
         if scene:
-            scene['nodes'] = [i for i in scene.get('nodes', []) if i not in mesh_node_indices]
-        
-        print(f"\nReorganized scene: {len(mesh_node_indices)} mesh nodes now under Armature")
-        
-        # Verify
-        print(f"Armature now has {len(armature_node['children'])} children")
-        for child_idx in armature_node['children']:
-            child = nodes[child_idx]
-            print(f"  Child {child_idx}: {child.get('name','?')} (mesh={child.get('mesh','no')})")
+            scene_root_nodes = list(scene.get('nodes', []))
+            armature_node = nodes[armature_idx]
+            if 'children' not in armature_node:
+                armature_node['children'] = []
+            
+            existing = set(armature_node['children'])
+            added = []
+            for idx in scene_root_nodes:
+                if idx != armature_idx and idx not in existing:
+                    armature_node['children'].append(idx)
+                    added.append(idx)
+            
+            # Set scene root to only have Armature
+            scene['nodes'] = [armature_idx]
+            
+            if added:
+                print(f"\nReorganized scene: {len(added)} nodes moved under Armature")
+                for idx in added:
+                    print(f"  Node {idx}: {nodes[idx].get('name','?')} (mesh={nodes[idx].get('mesh','no')}, skin={nodes[idx].get('skin','no')})")
 
     # Print summary
     if bone_renames:
