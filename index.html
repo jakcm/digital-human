@@ -434,6 +434,30 @@
 
 <script type="module">
 import { TalkingHead } from 'talkinghead';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ===== Fix skinned mesh hierarchy for VRM models =====
+// Three.js GLTFLoader reparents skinned meshes to scene root, but TalkingHead
+// traverses armature.children to find blend shapes. Move them back.
+const origLoadAsync = GLTFLoader.prototype.loadAsync;
+GLTFLoader.prototype.loadAsync = function(url, onProgress) {
+  return origLoadAsync.call(this, url, onProgress).then(gltf => {
+    const armature = gltf.scene.getObjectByName('Armature');
+    if (armature) {
+      const toMove = [];
+      gltf.scene.children.forEach(child => {
+        if (child.isSkinnedMesh !== undefined && child.morphTargetInfluences?.length) {
+          toMove.push(child);
+        }
+      });
+      toMove.forEach(child => {
+        gltf.scene.remove(child);
+        armature.add(child);
+      });
+    }
+    return gltf;
+  });
+};
 
 // ===== State =====
 let head = null;
